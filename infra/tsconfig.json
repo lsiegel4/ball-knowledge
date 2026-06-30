@@ -1,0 +1,12 @@
+{
+  "$comment": "CDK uses ts-node + CommonJS. We extend the shared base but override module settings, since the base targets NodeNext/ESM which ts-node + CDK handle poorly.",
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "types": ["node"],
+    "declaration": false,
+    "noEmit": true
+  },
+  "include": ["bin", "lib"]
+}

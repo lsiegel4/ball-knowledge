@@ -1,0 +1,16 @@
+{
+  "$comment": "Shared TypeScript settings. Every workspace's tsconfig.json extends this so we configure strictness, target, and module resolution in ONE place.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "sourceMap": true,
+    "noUncheckedIndexedAccess": true
+  }
+}

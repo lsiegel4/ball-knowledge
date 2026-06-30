@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# CDK
+infra/cdk.out/
+cdk.context.json
+
+# Python (data pipeline)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Env / secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local data artifacts
+data/raw/
+*.parquet

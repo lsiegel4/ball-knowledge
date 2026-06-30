@@ -1,0 +1,20 @@
+{
+  "name": "ball-knowledge",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Ball Knowledge — NBA knowledge game (daily challenge + live head-to-head)",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "frontend",
+    "infra"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  }
+}
