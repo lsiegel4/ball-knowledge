@@ -3,7 +3,7 @@ import { Construct } from "constructs";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import { Runtime } from "aws-cdk-lib/aws-lambda";
-import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpApi, HttpMethod, CorsHttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpUserPoolAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as path from "path";
@@ -30,6 +30,11 @@ export class ApiStack extends cdk.Stack {
     const httpApi = new HttpApi(this, "HttpApi", {
       apiName: "ball-knowledge-api",
       defaultAuthorizer: authorizer,
+      corsPreflight: {
+        allowOrigins: ["http://localhost:5173"],
+        allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.OPTIONS],
+        allowHeaders: ["authorization", "content-type"],
+      },
     });
 
     httpApi.addRoutes({
