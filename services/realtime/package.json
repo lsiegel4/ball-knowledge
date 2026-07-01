@@ -1,0 +1,13 @@
+{
+  "name": "@ball/realtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ball/shared": "*",
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.600.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.130"
+  }
+}
