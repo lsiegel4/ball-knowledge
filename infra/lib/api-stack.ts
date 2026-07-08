@@ -11,6 +11,7 @@ import * as path from "path";
 interface ApiStackProps extends cdk.StackProps {
   userPool: cognito.IUserPool;
   userPoolClient: cognito.IUserPoolClient;
+  allowedOrigins: string[];
 }
 
 export class ApiStack extends cdk.Stack {
@@ -31,7 +32,7 @@ export class ApiStack extends cdk.Stack {
       apiName: "ball-knowledge-api",
       defaultAuthorizer: authorizer,
       corsPreflight: {
-        allowOrigins: ["http://localhost:5173"],
+        allowOrigins: props.allowedOrigins,
         allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.OPTIONS],
         allowHeaders: ["authorization", "content-type"],
       },

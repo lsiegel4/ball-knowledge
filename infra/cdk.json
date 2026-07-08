@@ -7,6 +7,7 @@
   "context": {
     "@aws-cdk/core:newStyleStackSynthesis": true,
     "@aws-cdk/aws-iam:minimizePolicies": true,
-    "@aws-cdk/core:checkSecretUsage": true
+    "@aws-cdk/core:checkSecretUsage": true,
+    "spaOrigin": "https://d10qxo87qzj6fc.cloudfront.net"
   }
 }
