@@ -4,6 +4,7 @@ import { AuthStack } from "../lib/auth-stack";
 import { ApiStack } from "../lib/api-stack";
 import { RealtimeStack } from "../lib/realtime-stack";
 import { HostingStack } from "../lib/hosting-stack";
+import { DataStack } from "../lib/data-stack";
 
 const app = new cdk.App();
 
@@ -23,11 +24,14 @@ const allowedOrigins = [
 
 const auth = new AuthStack(app, "BallKnowledge-Auth", { env });
 
+const data = new DataStack(app, "BallKnowledge-Data", { env });
+
 new ApiStack(app, "BallKnowledge-Api", {
   env,
   userPool: auth.userPool,
   userPoolClient: auth.userPoolClient,
   allowedOrigins,
+  playersTable: data.playersTable,
 });
 
 new RealtimeStack(app, "BallKnowledge-Realtime", { env });

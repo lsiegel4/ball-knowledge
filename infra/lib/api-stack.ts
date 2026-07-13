@@ -1,6 +1,7 @@
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
 import * as cognito from "aws-cdk-lib/aws-cognito";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import { Runtime } from "aws-cdk-lib/aws-lambda";
 import { HttpApi, HttpMethod, CorsHttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
@@ -12,6 +13,7 @@ interface ApiStackProps extends cdk.StackProps {
   userPool: cognito.IUserPool;
   userPoolClient: cognito.IUserPoolClient;
   allowedOrigins: string[];
+  playersTable: dynamodb.ITable;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -42,6 +44,20 @@ export class ApiStack extends cdk.Stack {
       path: "/hello",
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration("HelloIntegration", helloFn),
+    });
+
+    const searchFn = new NodejsFunction(this, "PlayerSearchFn", {
+      runtime: Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, "../../services/api/src/search.ts"),
+      handler: "handler",
+      environment: { PLAYERS_TABLE: props.playersTable.tableName },
+    });
+    props.playersTable.grantReadData(searchFn);
+
+    httpApi.addRoutes({
+      path: "/players/search",
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration("PlayerSearchIntegration", searchFn),
     });
 
     new cdk.CfnOutput(this, "ApiUrl", { value: httpApi.apiEndpoint });
