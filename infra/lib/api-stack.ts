@@ -7,6 +7,8 @@ import { Runtime } from "aws-cdk-lib/aws-lambda";
 import { HttpApi, HttpMethod, CorsHttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpUserPoolAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import * as events from "aws-cdk-lib/aws-events";
+import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as path from "path";
 
 interface ApiStackProps extends cdk.StackProps {
@@ -14,6 +16,8 @@ interface ApiStackProps extends cdk.StackProps {
   userPoolClient: cognito.IUserPoolClient;
   allowedOrigins: string[];
   playersTable: dynamodb.ITable;
+  dailyPicksTable: dynamodb.ITable;
+  dailyResultsTable: dynamodb.ITable;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -35,7 +39,7 @@ export class ApiStack extends cdk.Stack {
       defaultAuthorizer: authorizer,
       corsPreflight: {
         allowOrigins: props.allowedOrigins,
-        allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.OPTIONS],
+        allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.POST, CorsHttpMethod.OPTIONS],
         allowHeaders: ["authorization", "content-type"],
       },
     });
@@ -58,6 +62,61 @@ export class ApiStack extends cdk.Stack {
       path: "/players/search",
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration("PlayerSearchIntegration", searchFn),
+    });
+
+    const dailyPickFn = new NodejsFunction(this, "DailyPickFn", {
+      runtime: Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, "../../services/api/src/daily-pick.ts"),
+      handler: "handler",
+      environment: {
+        PLAYERS_TABLE: props.playersTable.tableName,
+        DAILY_PICKS_TABLE: props.dailyPicksTable.tableName,
+      },
+    });
+    props.playersTable.grantReadData(dailyPickFn);
+    props.dailyPicksTable.grantWriteData(dailyPickFn);
+
+    httpApi.addRoutes({
+      path: "/daily/pick",
+      methods: [HttpMethod.POST],
+      integration: new HttpLambdaIntegration("DailyPickIntegration", dailyPickFn),
+    });
+
+    const dailyTodayFn = new NodejsFunction(this, "DailyTodayFn", {
+      runtime: Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, "../../services/api/src/daily-today.ts"),
+      handler: "handler",
+      environment: {
+        DAILY_PICKS_TABLE: props.dailyPicksTable.tableName,
+        DAILY_RESULTS_TABLE: props.dailyResultsTable.tableName,
+      },
+    });
+    props.dailyPicksTable.grantReadData(dailyTodayFn);
+    props.dailyResultsTable.grantReadData(dailyTodayFn);
+
+    httpApi.addRoutes({
+      path: "/daily/today",
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration("DailyTodayIntegration", dailyTodayFn),
+    });
+
+    const tallyFn = new NodejsFunction(this, "DailyTallyFn", {
+      runtime: Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, "../../services/api/src/daily-tally.ts"),
+      handler: "handler",
+      timeout: cdk.Duration.seconds(60),
+      environment: {
+        DAILY_PICKS_TABLE: props.dailyPicksTable.tableName,
+        DAILY_RESULTS_TABLE: props.dailyResultsTable.tableName,
+      },
+    });
+    props.dailyPicksTable.grantReadData(tallyFn);
+    props.dailyResultsTable.grantWriteData(tallyFn);
+
+    // 05:30 UTC = just after midnight ET both DST seasons. Lambda tallies yesterday-ET.
+    new events.Rule(this, "DailyTallySchedule", {
+      schedule: events.Schedule.cron({ minute: "30", hour: "5" }),
+      targets: [new targets.LambdaFunction(tallyFn)],
     });
 
     new cdk.CfnOutput(this, "ApiUrl", { value: httpApi.apiEndpoint });

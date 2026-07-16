@@ -32,6 +32,8 @@ new ApiStack(app, "BallKnowledge-Api", {
   userPoolClient: auth.userPoolClient,
   allowedOrigins,
   playersTable: data.playersTable,
+  dailyPicksTable: data.dailyPicksTable,
+  dailyResultsTable: data.dailyResultsTable,
 });
 
 new RealtimeStack(app, "BallKnowledge-Realtime", { env });

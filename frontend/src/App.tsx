@@ -4,11 +4,9 @@ import {
   confirmSignUp,
   signIn,
   signOut,
-  fetchAuthSession,
   getCurrentUser,
 } from "aws-amplify/auth";
-
-const API_URL = import.meta.env.VITE_API_URL;
+import { DailyChallenge } from "./DailyChallenge";
 
 type Stage = "signIn" | "signUp" | "confirm" | "authed";
 
@@ -18,7 +16,6 @@ export function App() {
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [status, setStatus] = useState("");
-  const [apiResult, setApiResult] = useState("");
 
   useEffect(() => {
     getCurrentUser()
@@ -59,17 +56,7 @@ export function App() {
 
   const doSignOut = wrap(async () => {
     await signOut();
-    setApiResult("");
     setStage("signIn");
-  });
-
-  const callApi = wrap(async () => {
-    const session = await fetchAuthSession();
-    const token = session.tokens?.idToken?.toString();
-    const res = await fetch(`${API_URL}/hello`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    setApiResult(`HTTP ${res.status}\n${JSON.stringify(await res.json(), null, 2)}`);
   });
 
   return (
@@ -78,12 +65,8 @@ export function App() {
 
       {stage === "authed" ? (
         <>
-          <p>Signed in.</p>
-          <button onClick={callApi}>Call GET /hello</button>{" "}
-          <button onClick={doSignOut}>Sign out</button>
-          {apiResult && (
-            <pre style={{ background: "#f4f4f4", padding: "1rem" }}>{apiResult}</pre>
-          )}
+          <button onClick={doSignOut} style={{ float: "right" }}>Sign out</button>
+          <DailyChallenge />
         </>
       ) : (
         <>

@@ -6,6 +6,8 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 export class DataStack extends cdk.Stack {
   public readonly rawBucket: s3.Bucket;
   public readonly playersTable: dynamodb.Table;
+  public readonly dailyPicksTable: dynamodb.Table;
+  public readonly dailyResultsTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -25,7 +27,26 @@ export class DataStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    this.dailyPicksTable = new dynamodb.Table(this, "DailyPicksTable", {
+      tableName: "ball-knowledge-daily-picks",
+      partitionKey: { name: "day", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "userId", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.dailyResultsTable = new dynamodb.Table(this, "DailyResultsTable", {
+      tableName: "ball-knowledge-daily-results",
+      partitionKey: { name: "day", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     new cdk.CfnOutput(this, "RawBucketName", { value: this.rawBucket.bucketName });
     new cdk.CfnOutput(this, "PlayersTableName", { value: this.playersTable.tableName });
+    new cdk.CfnOutput(this, "DailyPicksTableName", { value: this.dailyPicksTable.tableName });
+    new cdk.CfnOutput(this, "DailyResultsTableName", { value: this.dailyResultsTable.tableName });
   }
 }
