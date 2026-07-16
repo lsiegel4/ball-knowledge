@@ -18,7 +18,32 @@ type Results = {
   winner: { playerId: string; playerName: string; count: number };
   totalPicks: number;
 };
-type Today = { day: string; pick: Pick | null; results: Results | null };
+type DayResult = { day: string; pick: Pick | null; results: Results | null };
+type Today = {
+  day: string;
+  pick: Pick | null;
+  results: Results | null;
+  yesterday: DayResult;
+};
+
+function ResultsView({ pick, results, label }: DayResult & { label: string }) {
+  if (!results) return null;
+  const iWon = pick && results.winner.playerId === pick.playerId;
+  return (
+    <div style={{ background: "#f4f4f4", padding: "0.75rem", marginTop: "1rem" }}>
+      <h3 style={{ margin: "0 0 0.5rem" }}>{label}</h3>
+      <p style={{ margin: "0.25rem 0" }}>
+        Winner: <b>{results.winner.playerName}</b> — {results.winner.count} of{" "}
+        {results.totalPicks} picks
+      </p>
+      {pick && (
+        <p style={{ margin: "0.25rem 0" }}>
+          You picked {pick.playerName}. {iWon ? "🏆 You won!" : "Not this time."}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function DailyChallenge() {
   const [today, setToday] = useState<Today | null>(null);
@@ -70,24 +95,6 @@ export function DailyChallenge() {
 
   if (!today) return <p>Loading…</p>;
 
-  if (today.results) {
-    const r = today.results;
-    const iWon = today.pick && r.winner.playerId === today.pick.playerId;
-    return (
-      <div>
-        <h3>Results — {today.day}</h3>
-        <p>
-          Winner: <b>{r.winner.playerName}</b> — {r.winner.count} of {r.totalPicks} picks
-        </p>
-        {today.pick && (
-          <p>
-            You picked {today.pick.playerName}. {iWon ? "🏆 You won!" : "Not today."}
-          </p>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div>
       <h3>Daily Challenge — {today.day}</h3>
@@ -111,6 +118,9 @@ export function DailyChallenge() {
         ))}
       </ul>
       {msg && <p>{msg}</p>}
+
+      <ResultsView label={`Today's results — ${today.day}`} {...today} />
+      <ResultsView label={`Yesterday — ${today.yesterday.day}`} {...today.yesterday} />
     </div>
   );
 }

@@ -15,10 +15,13 @@ export const handler = async (
 ): Promise<APIGatewayProxyResultV2> => {
   const userId = event.requestContext.authorizer.jwt.claims.sub as string;
   const day = todayET();
+  const yday = todayET(new Date(Date.now() - 24 * 60 * 60 * 1000));
 
-  const [pick, results] = await Promise.all([
+  const [pick, results, ydayPick, ydayResults] = await Promise.all([
     doc.send(new GetCommand({ TableName: PICKS, Key: { day, userId } })),
     doc.send(new GetCommand({ TableName: RESULTS, Key: { day } })),
+    doc.send(new GetCommand({ TableName: PICKS, Key: { day: yday, userId } })),
+    doc.send(new GetCommand({ TableName: RESULTS, Key: { day: yday } })),
   ]);
 
   return {
@@ -28,6 +31,11 @@ export const handler = async (
       day,
       pick: pick.Item ?? null,
       results: results.Item ?? null,
+      yesterday: {
+        day: yday,
+        pick: ydayPick.Item ?? null,
+        results: ydayResults.Item ?? null,
+      },
     }),
   };
 };
