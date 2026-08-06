@@ -6,12 +6,40 @@ import {
   ApiGatewayManagementApiClient,
   PostToConnectionCommand,
 } from "@aws-sdk/client-apigatewaymanagementapi";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 
-export const connect = async (): Promise<APIGatewayProxyResultV2> => {
+const doc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const CONNECTIONS = process.env.CONNECTIONS_TABLE!;
+
+// Orphan safety net: a row untouched for 2h self-deletes via TTL.
+const TTL_SECONDS = 2 * 60 * 60;
+
+export const connect = async (
+  event: APIGatewayProxyWebsocketEventV2
+): Promise<APIGatewayProxyResultV2> => {
+  await doc.send(
+    new PutCommand({
+      TableName: CONNECTIONS,
+      Item: {
+        connectionId: event.requestContext.connectionId,
+        gameId: null,
+        expireAt: Math.floor(Date.now() / 1000) + TTL_SECONDS,
+      },
+    })
+  );
   return { statusCode: 200 };
 };
 
-export const disconnect = async (): Promise<APIGatewayProxyResultV2> => {
+export const disconnect = async (
+  event: APIGatewayProxyWebsocketEventV2
+): Promise<APIGatewayProxyResultV2> => {
+  await doc.send(
+    new DeleteCommand({
+      TableName: CONNECTIONS,
+      Key: { connectionId: event.requestContext.connectionId },
+    })
+  );
   return { statusCode: 200 };
 };
 

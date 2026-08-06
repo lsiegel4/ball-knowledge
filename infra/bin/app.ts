@@ -36,7 +36,11 @@ new ApiStack(app, "BallKnowledge-Api", {
   dailyResultsTable: data.dailyResultsTable,
 });
 
-new RealtimeStack(app, "BallKnowledge-Realtime", { env });
+new RealtimeStack(app, "BallKnowledge-Realtime", {
+  env,
+  gamesTable: data.gamesTable,
+  connectionsTable: data.connectionsTable,
+});
 
 new HostingStack(app, "BallKnowledge-Hosting", { env });
 

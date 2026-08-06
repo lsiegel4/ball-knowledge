@@ -1,13 +1,19 @@
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import { Runtime } from "aws-cdk-lib/aws-lambda";
 import { WebSocketApi, WebSocketStage } from "aws-cdk-lib/aws-apigatewayv2";
 import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as path from "path";
 
+interface RealtimeStackProps extends cdk.StackProps {
+  gamesTable: dynamodb.ITable;
+  connectionsTable: dynamodb.ITable;
+}
+
 export class RealtimeStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: RealtimeStackProps) {
     super(scope, id, props);
 
     const entry = path.join(__dirname, "../../services/realtime/src/handlers.ts");
@@ -16,11 +22,19 @@ export class RealtimeStack extends cdk.Stack {
         runtime: Runtime.NODEJS_20_X,
         entry,
         handler,
+        environment: {
+          CONNECTIONS_TABLE: props.connectionsTable.tableName,
+          GAMES_TABLE: props.gamesTable.tableName,
+        },
       });
 
     const connectFn = fn("ConnectFn", "connect");
     const disconnectFn = fn("DisconnectFn", "disconnect");
     const echoFn = fn("EchoFn", "echo");
+
+    // connect writes its Connection row; disconnect deletes it.
+    props.connectionsTable.grantWriteData(connectFn);
+    props.connectionsTable.grantWriteData(disconnectFn);
 
     const wsApi = new WebSocketApi(this, "WsApi", {
       apiName: "ball-knowledge-ws",
