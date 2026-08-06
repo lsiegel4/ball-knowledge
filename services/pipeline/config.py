@@ -8,6 +8,7 @@ RAW_BUCKET = os.environ.get(
 )
 
 PLAYERS_TABLE = os.environ.get("PLAYERS_TABLE", "ball-knowledge-players")
+CATEGORIES_TABLE = os.environ.get("CATEGORIES_TABLE", "ball-knowledge-categories")
 
 # LeagueDashPlayerStats only covers 1996-97+. Pre-1996 backfill is a separate
 # task (per-player career stats or a historical dataset seed).

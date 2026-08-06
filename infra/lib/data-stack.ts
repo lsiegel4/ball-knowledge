@@ -11,6 +11,7 @@ export class DataStack extends cdk.Stack {
   public readonly gamesTable: dynamodb.Table;
   public readonly connectionsTable: dynamodb.Table;
   public readonly matchmakingTable: dynamodb.Table;
+  public readonly categoriesTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -77,6 +78,15 @@ export class DataStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    // Precomputed H2H categories. categoryId PK, holds label + valid player set.
+    // Regenerable seed data (built offline from S3 raw seasons), so no PITR.
+    this.categoriesTable = new dynamodb.Table(this, "CategoriesTable", {
+      tableName: "ball-knowledge-categories",
+      partitionKey: { name: "categoryId", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     new cdk.CfnOutput(this, "RawBucketName", { value: this.rawBucket.bucketName });
     new cdk.CfnOutput(this, "PlayersTableName", { value: this.playersTable.tableName });
     new cdk.CfnOutput(this, "DailyPicksTableName", { value: this.dailyPicksTable.tableName });
@@ -84,5 +94,6 @@ export class DataStack extends cdk.Stack {
     new cdk.CfnOutput(this, "GamesTableName", { value: this.gamesTable.tableName });
     new cdk.CfnOutput(this, "ConnectionsTableName", { value: this.connectionsTable.tableName });
     new cdk.CfnOutput(this, "MatchmakingTableName", { value: this.matchmakingTable.tableName });
+    new cdk.CfnOutput(this, "CategoriesTableName", { value: this.categoriesTable.tableName });
   }
 }
