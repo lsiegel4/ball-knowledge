@@ -10,31 +10,40 @@ import * as path from "path";
 interface RealtimeStackProps extends cdk.StackProps {
   gamesTable: dynamodb.ITable;
   connectionsTable: dynamodb.ITable;
+  matchmakingTable: dynamodb.ITable;
 }
 
 export class RealtimeStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: RealtimeStackProps) {
     super(scope, id, props);
 
-    const entry = path.join(__dirname, "../../services/realtime/src/handlers.ts");
-    const fn = (name: string, handler: string) =>
+    const env = {
+      CONNECTIONS_TABLE: props.connectionsTable.tableName,
+      GAMES_TABLE: props.gamesTable.tableName,
+      MATCHMAKING_TABLE: props.matchmakingTable.tableName,
+    };
+    const fn = (name: string, entryFile: string, handler: string) =>
       new NodejsFunction(this, name, {
         runtime: Runtime.NODEJS_20_X,
-        entry,
+        entry: path.join(__dirname, `../../services/realtime/src/${entryFile}`),
         handler,
-        environment: {
-          CONNECTIONS_TABLE: props.connectionsTable.tableName,
-          GAMES_TABLE: props.gamesTable.tableName,
-        },
+        environment: env,
       });
 
-    const connectFn = fn("ConnectFn", "connect");
-    const disconnectFn = fn("DisconnectFn", "disconnect");
-    const echoFn = fn("EchoFn", "echo");
+    const connectFn = fn("ConnectFn", "handlers.ts", "connect");
+    const disconnectFn = fn("DisconnectFn", "handlers.ts", "disconnect");
+    const echoFn = fn("EchoFn", "handlers.ts", "echo");
+    const findMatchFn = fn("FindMatchFn", "matchmaking.ts", "findMatch");
 
-    // connect writes its Connection row; disconnect deletes it.
+    // connect writes its Connection row; disconnect deletes it + clears queue.
     props.connectionsTable.grantWriteData(connectFn);
     props.connectionsTable.grantWriteData(disconnectFn);
+    props.matchmakingTable.grantWriteData(disconnectFn);
+
+    // findMatch reads/claims the queue, creates the game, links both sockets.
+    props.matchmakingTable.grantReadWriteData(findMatchFn);
+    props.gamesTable.grantWriteData(findMatchFn);
+    props.connectionsTable.grantWriteData(findMatchFn);
 
     const wsApi = new WebSocketApi(this, "WsApi", {
       apiName: "ball-knowledge-ws",
@@ -49,6 +58,9 @@ export class RealtimeStack extends cdk.Stack {
     wsApi.addRoute("echo", {
       integration: new WebSocketLambdaIntegration("EchoInt", echoFn),
     });
+    wsApi.addRoute("findMatch", {
+      integration: new WebSocketLambdaIntegration("FindMatchInt", findMatchFn),
+    });
 
     const stage = new WebSocketStage(this, "DevStage", {
       webSocketApi: wsApi,
@@ -56,9 +68,9 @@ export class RealtimeStack extends cdk.Stack {
       autoDeploy: true,
     });
 
-    // echo handler calls back into the WS API to push messages, so it needs
-    // execute-api:ManageConnections on this API.
+    // Handlers that push messages back to clients need ManageConnections.
     wsApi.grantManageConnections(echoFn);
+    wsApi.grantManageConnections(findMatchFn);
 
     new cdk.CfnOutput(this, "WsUrl", { value: stage.url });
   }

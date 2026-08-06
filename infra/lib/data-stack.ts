@@ -10,6 +10,7 @@ export class DataStack extends cdk.Stack {
   public readonly dailyResultsTable: dynamodb.Table;
   public readonly gamesTable: dynamodb.Table;
   public readonly connectionsTable: dynamodb.Table;
+  public readonly matchmakingTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -67,11 +68,21 @@ export class DataStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    // Matchmaking queue. Single item (pk "queue") holds the current waiter.
+    // Claims use conditional writes for atomic pairing (optimistic concurrency).
+    this.matchmakingTable = new dynamodb.Table(this, "MatchmakingTable", {
+      tableName: "ball-knowledge-matchmaking",
+      partitionKey: { name: "pk", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     new cdk.CfnOutput(this, "RawBucketName", { value: this.rawBucket.bucketName });
     new cdk.CfnOutput(this, "PlayersTableName", { value: this.playersTable.tableName });
     new cdk.CfnOutput(this, "DailyPicksTableName", { value: this.dailyPicksTable.tableName });
     new cdk.CfnOutput(this, "DailyResultsTableName", { value: this.dailyResultsTable.tableName });
     new cdk.CfnOutput(this, "GamesTableName", { value: this.gamesTable.tableName });
     new cdk.CfnOutput(this, "ConnectionsTableName", { value: this.connectionsTable.tableName });
+    new cdk.CfnOutput(this, "MatchmakingTableName", { value: this.matchmakingTable.tableName });
   }
 }

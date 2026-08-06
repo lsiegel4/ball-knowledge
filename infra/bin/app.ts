@@ -40,6 +40,7 @@ new RealtimeStack(app, "BallKnowledge-Realtime", {
   env,
   gamesTable: data.gamesTable,
   connectionsTable: data.connectionsTable,
+  matchmakingTable: data.matchmakingTable,
 });
 
 new HostingStack(app, "BallKnowledge-Hosting", { env });

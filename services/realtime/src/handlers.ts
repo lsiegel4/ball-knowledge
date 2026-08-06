@@ -6,11 +6,8 @@ import {
   ApiGatewayManagementApiClient,
   PostToConnectionCommand,
 } from "@aws-sdk/client-apigatewaymanagementapi";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
-
-const doc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-const CONNECTIONS = process.env.CONNECTIONS_TABLE!;
+import { PutCommand, DeleteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { doc, CONNECTIONS, MATCHMAKING } from "./shared";
 
 // Orphan safety net: a row untouched for 2h self-deletes via TTL.
 const TTL_SECONDS = 2 * 60 * 60;
@@ -34,12 +31,28 @@ export const connect = async (
 export const disconnect = async (
   event: APIGatewayProxyWebsocketEventV2
 ): Promise<APIGatewayProxyResultV2> => {
+  const connectionId = event.requestContext.connectionId;
+
   await doc.send(
-    new DeleteCommand({
-      TableName: CONNECTIONS,
-      Key: { connectionId: event.requestContext.connectionId },
-    })
+    new DeleteCommand({ TableName: CONNECTIONS, Key: { connectionId } })
   );
+
+  // If this socket was the matchmaking waiter, clear the slot so nobody pairs
+  // with a dead connection. Guard on the value — no-op if someone else waits.
+  await doc
+    .send(
+      new UpdateCommand({
+        TableName: MATCHMAKING,
+        Key: { pk: "queue" },
+        UpdateExpression: "REMOVE waitingConn",
+        ConditionExpression: "waitingConn = :me",
+        ExpressionAttributeValues: { ":me": connectionId },
+      })
+    )
+    .catch((e) => {
+      if ((e as { name?: string }).name !== "ConditionalCheckFailedException") throw e;
+    });
+
   return { statusCode: 200 };
 };
 
