@@ -12,7 +12,6 @@ interface RealtimeStackProps extends cdk.StackProps {
   connectionsTable: dynamodb.ITable;
   matchmakingTable: dynamodb.ITable;
   categoriesTable: dynamodb.ITable;
-  playersTable: dynamodb.ITable;
 }
 
 export class RealtimeStack extends cdk.Stack {
@@ -24,7 +23,6 @@ export class RealtimeStack extends cdk.Stack {
       GAMES_TABLE: props.gamesTable.tableName,
       MATCHMAKING_TABLE: props.matchmakingTable.tableName,
       CATEGORIES_TABLE: props.categoriesTable.tableName,
-      PLAYERS_TABLE: props.playersTable.tableName,
     };
     const fn = (name: string, entryFile: string, handler: string) =>
       new NodejsFunction(this, name, {
@@ -55,7 +53,6 @@ export class RealtimeStack extends cdk.Stack {
     props.connectionsTable.grantReadData(submitPickFn);
     props.gamesTable.grantReadWriteData(submitPickFn);
     props.categoriesTable.grantReadData(submitPickFn);
-    props.playersTable.grantReadData(submitPickFn);
 
     const wsApi = new WebSocketApi(this, "WsApi", {
       apiName: "ball-knowledge-ws",

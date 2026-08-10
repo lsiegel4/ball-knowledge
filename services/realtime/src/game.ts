@@ -7,7 +7,7 @@ import {
   UpdateCommand,
   ScanCommand,
 } from "@aws-sdk/lib-dynamodb";
-import { doc, GAMES, CONNECTIONS, CATEGORIES, PLAYERS, push } from "./shared";
+import { doc, GAMES, CONNECTIONS, CATEGORIES, push } from "./shared";
 
 const ROUND_MS = 30_000;
 const WIN_SCORE = 4;
@@ -30,11 +30,14 @@ async function pushBoth(
   );
 }
 
-async function randomCategory(): Promise<{
+type Category = {
   categoryId: string;
   label: string;
-  validPlayerIds: string[];
-}> {
+  // Category-relative fame prior: playerId -> { name, fame in [0,1] within this set }.
+  valid: Record<string, { name: string; fame: number }>;
+};
+
+async function randomCategory(): Promise<Category> {
   const ids = await doc.send(
     new ScanCommand({ TableName: CATEGORIES, ProjectionExpression: "categoryId" })
   );
@@ -44,11 +47,7 @@ async function randomCategory(): Promise<{
     new GetCommand({ TableName: CATEGORIES, Key: { categoryId: chosen.categoryId } })
   );
   const c = full.Item!;
-  return {
-    categoryId: c.categoryId,
-    label: c.label,
-    validPlayerIds: c.validPlayerIds,
-  };
+  return { categoryId: c.categoryId, label: c.label, valid: c.valid };
 }
 
 // Assign a category + deadline, clear picks, push roundStart to both players.
@@ -123,23 +122,17 @@ export const submitPick = async (
     return { statusCode: 200 };
   }
 
-  if (!(game.category.validPlayerIds as string[]).includes(playerId)) {
-    await push(domainName, stage, me, { type: "invalidPick" });
-    return { statusCode: 200 };
-  }
-
-  const player = await doc.send(
-    new GetCommand({ TableName: PLAYERS, Key: { playerId } })
-  );
-  if (!player.Item) {
+  // Membership + fame both come from the category itself — no players lookup.
+  const entry = (game.category.valid as Category["valid"])[playerId];
+  if (!entry) {
     await push(domainName, stage, me, { type: "invalidPick" });
     return { statusCode: 200 };
   }
 
   const pick = {
     playerId,
-    playerName: player.Item.name,
-    fameScore: Number(player.Item.fameScore),
+    playerName: entry.name,
+    fameScore: Number(entry.fame),
     submittedAt: Date.now(),
   };
 

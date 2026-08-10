@@ -11,7 +11,6 @@ export const CONNECTIONS = process.env.CONNECTIONS_TABLE!;
 export const GAMES = process.env.GAMES_TABLE!;
 export const MATCHMAKING = process.env.MATCHMAKING_TABLE!;
 export const CATEGORIES = process.env.CATEGORIES_TABLE!;
-export const PLAYERS = process.env.PLAYERS_TABLE!;
 
 // Push a JSON message to a client socket. domain/stage come from the event's
 // requestContext — that's the WS API's own management endpoint.

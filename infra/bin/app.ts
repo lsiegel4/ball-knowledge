@@ -42,7 +42,6 @@ new RealtimeStack(app, "BallKnowledge-Realtime", {
   connectionsTable: data.connectionsTable,
   matchmakingTable: data.matchmakingTable,
   categoriesTable: data.categoriesTable,
-  playersTable: data.playersTable,
 });
 
 new HostingStack(app, "BallKnowledge-Hosting", { env });

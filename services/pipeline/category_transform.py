@@ -6,6 +6,7 @@ Thresholds are parameterized so the pool scales by adding values, not code.
 Run: .venv/bin/python category_transform.py   (reads same S3 raw as transform.py)
 """
 import json
+from decimal import Decimal
 from typing import Callable
 
 import boto3
@@ -17,9 +18,9 @@ import config
 MIN_VALID = 12
 
 s3 = boto3.client("s3", region_name=config.AWS_REGION)
-table = boto3.resource("dynamodb", region_name=config.AWS_REGION).Table(
-    config.CATEGORIES_TABLE
-)
+dynamodb = boto3.resource("dynamodb", region_name=config.AWS_REGION)
+table = dynamodb.Table(config.CATEGORIES_TABLE)
+players_table = dynamodb.Table(config.PLAYERS_TABLE)
 
 Row = dict
 Pred = Callable[[Row], bool]
@@ -121,7 +122,39 @@ def team_templates(seasons: list[list[Row]]) -> list[tuple[str, str, Pred]]:
     ]
 
 
-def build() -> list[dict]:
+def load_players() -> dict[str, tuple[str, float]]:
+    """playerId -> (name, global fameScore). Fame is the input we re-rank per category."""
+    out: dict[str, tuple[str, float]] = {}
+    kwargs = {"ProjectionExpression": "playerId, #n, fameScore",
+              "ExpressionAttributeNames": {"#n": "name"}}
+    while True:
+        res = players_table.scan(**kwargs)
+        for it in res["Items"]:
+            out[it["playerId"]] = (it["name"], float(it["fameScore"]))
+        if "LastEvaluatedKey" not in res:
+            return out
+        kwargs["ExclusiveStartKey"] = res["LastEvaluatedKey"]
+
+
+def category_fame(valid_ids: set[str], players: dict[str, tuple[str, float]]) -> dict:
+    """Re-rank valid players by global fame WITHIN this set (percentile 0-1).
+
+    Most-obscure-in-category -> 0, most-famous -> 1. This spreads narrow elite
+    categories (where everyone is globally famous) across the full range.
+    """
+    members = [pid for pid in valid_ids if pid in players]
+    members.sort(key=lambda pid: players[pid][1])  # ascending global fame
+    denom = len(members) - 1 or 1
+    return {
+        pid: {
+            "name": players[pid][0],
+            "fame": Decimal(str(round(rank / denom, 4))),
+        }
+        for rank, pid in enumerate(members)
+    }
+
+
+def build(players: dict[str, tuple[str, float]]) -> list[dict]:
     seasons = [load_season(s) for s in config.seasons()]
 
     templates = (
@@ -141,7 +174,7 @@ def build() -> list[dict]:
                     valid.add(str(row["PLAYER_ID"]))
         if len(valid) >= MIN_VALID:
             categories.append(
-                {"categoryId": cid, "label": label, "validPlayerIds": sorted(valid)}
+                {"categoryId": cid, "label": label, "valid": category_fame(valid, players)}
             )
     return categories
 
@@ -153,11 +186,13 @@ def write(categories: list[dict]) -> None:
 
 
 def main() -> None:
-    categories = build()
+    players = load_players()
+    print(f"loaded {len(players)} player fame scores")
+    categories = build(players)
     write(categories)
     print(f"wrote {len(categories)} categories to {config.CATEGORIES_TABLE}")
-    for c in sorted(categories, key=lambda c: len(c["validPlayerIds"])):
-        print(f"  {len(c['validPlayerIds']):4d}  {c['categoryId']:20s}  {c['label']}")
+    for c in sorted(categories, key=lambda c: len(c["valid"])):
+        print(f"  {len(c['valid']):4d}  {c['categoryId']:20s}  {c['label']}")
 
 
 if __name__ == "__main__":
