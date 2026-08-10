@@ -173,6 +173,30 @@ export const submitPick = async (
   return { statusCode: 200 };
 };
 
+// Client's countdown hit 0. Resolve the round with whatever picks landed:
+// one pick -> no-show loses; no picks -> replay. Idempotent across both clients.
+export const roundTimeout = async (
+  event: APIGatewayProxyWebsocketEventV2
+): Promise<APIGatewayProxyResultV2> => {
+  const { connectionId: me, domainName, stage } = event.requestContext;
+
+  const conn = await doc.send(
+    new GetCommand({ TableName: CONNECTIONS, Key: { connectionId: me } })
+  );
+  const gameId: string | undefined = conn.Item?.gameId ?? undefined;
+  if (!gameId) return { statusCode: 200 };
+
+  const g = await doc.send(new GetCommand({ TableName: GAMES, Key: { gameId } }));
+  const game = g.Item;
+  if (!game || game.status !== "active" || !game.category) return { statusCode: 200 };
+
+  // Only resolve once the deadline has genuinely passed.
+  if (Date.now() <= Number(game.deadline)) return { statusCode: 200 };
+
+  await resolveRound(domainName, stage, game);
+  return { statusCode: 200 };
+};
+
 async function resolveRound(
   domainName: string,
   stage: string,
@@ -180,26 +204,39 @@ async function resolveRound(
 ): Promise<void> {
   const gameId: string = game.gameId;
   const players = game.players as Player[];
-  const p0 = game.picks["0"];
-  const p1 = game.picks["1"];
+  const p0 = game.picks?.["0"];
+  const p1 = game.picks?.["1"];
   const scores = [Number(game.scores[0]), Number(game.scores[1])];
   const round = Number(game.round);
 
-  const replay =
-    p0.playerId === p1.playerId || Number(p0.fameScore) === Number(p1.fameScore);
-
+  // Outcome. Missing picks only happen on timeout: a no-show loses; both
+  // no-show (or same player / identical fame) is a replay.
   let winnerIndex: number | null = null;
-  if (!replay) {
-    winnerIndex = Number(p0.fameScore) < Number(p1.fameScore) ? 0 : 1;
-    scores[winnerIndex] += 1;
+  let replay = false;
+  if (p0 && p1) {
+    if (p0.playerId === p1.playerId || Number(p0.fameScore) === Number(p1.fameScore)) {
+      replay = true;
+    } else {
+      winnerIndex = Number(p0.fameScore) < Number(p1.fameScore) ? 0 : 1;
+    }
+  } else if (p0 && !p1) {
+    winnerIndex = 0;
+  } else if (!p0 && p1) {
+    winnerIndex = 1;
+  } else {
+    replay = true;
   }
+  if (winnerIndex !== null) scores[winnerIndex] += 1;
 
   const over = winnerIndex !== null && scores[winnerIndex] >= WIN_SCORE;
 
-  // Guard on both picks still present so only one Lambda resolves this round.
-  const cond = {
-    ConditionExpression: "attribute_exists(picks.#p0) AND attribute_exists(picks.#p1)",
-    ExpressionAttributeNames: { "#p0": "0", "#p1": "1" } as Record<string, string>,
+  // Single-resolver guard: only the invocation that sees the round still live
+  // (same deadline, still active) resolves. It then changes deadline/status,
+  // so any concurrent submit/timeout for this round fails the condition.
+  const guard = {
+    ConditionExpression: "deadline = :curD AND #s = :active",
+    names: { "#s": "status" } as Record<string, string>,
+    values: { ":curD": Number(game.deadline), ":active": "active" } as Record<string, unknown>,
   };
 
   try {
@@ -208,14 +245,13 @@ async function resolveRound(
         new UpdateCommand({
           TableName: GAMES,
           Key: { gameId },
-          UpdateExpression: "SET scores = :s, #st = :finished",
-          ConditionExpression: cond.ConditionExpression,
-          ExpressionAttributeNames: { ...cond.ExpressionAttributeNames, "#st": "status" },
-          ExpressionAttributeValues: { ":s": scores, ":finished": "finished" },
+          UpdateExpression: "SET scores = :s, #s = :finished",
+          ConditionExpression: guard.ConditionExpression,
+          ExpressionAttributeNames: guard.names,
+          ExpressionAttributeValues: { ...guard.values, ":s": scores, ":finished": "finished" },
         })
       );
     } else {
-      // Replay keeps the same round number; a real result advances it.
       const nextRound = replay ? round : round + 1;
       const category = await randomCategory();
       await doc.send(
@@ -224,9 +260,10 @@ async function resolveRound(
           Key: { gameId },
           UpdateExpression:
             "SET scores = :s, #r = :nr, category = :c, deadline = :d, picks = :empty",
-          ConditionExpression: cond.ConditionExpression,
-          ExpressionAttributeNames: { ...cond.ExpressionAttributeNames, "#r": "round" },
+          ConditionExpression: guard.ConditionExpression,
+          ExpressionAttributeNames: { ...guard.names, "#r": "round" },
           ExpressionAttributeValues: {
+            ...guard.values,
             ":s": scores,
             ":nr": nextRound,
             ":c": category,
@@ -241,24 +278,20 @@ async function resolveRound(
     throw e;
   }
 
+  const reveal = (p: any) =>
+    p ? { playerId: p.playerId, playerName: p.playerName, fameScore: p.fameScore } : null;
+
   await pushBoth(domainName, stage, players, {
     type: "roundResult",
     round,
     replay,
     winnerIndex,
     scores,
-    picks: [
-      { playerId: p0.playerId, playerName: p0.playerName, fameScore: p0.fameScore },
-      { playerId: p1.playerId, playerName: p1.playerName, fameScore: p1.fameScore },
-    ],
+    picks: [reveal(p0), reveal(p1)],
   });
 
   if (over) {
-    await pushBoth(domainName, stage, players, {
-      type: "matchOver",
-      scores,
-      winnerIndex,
-    });
+    await pushBoth(domainName, stage, players, { type: "matchOver", scores, winnerIndex });
   } else {
     const g = await doc.send(new GetCommand({ TableName: GAMES, Key: { gameId } }));
     const next = g.Item!;
@@ -268,5 +301,45 @@ async function resolveRound(
       category: { categoryId: next.category.categoryId, label: next.category.label },
       deadline: Number(next.deadline),
     });
+  }
+}
+
+// A socket bound to an active game dropped. Finish the game; the other player
+// wins by abandonment. Guarded so a double-disconnect resolves once.
+export async function abandonGame(
+  domainName: string,
+  stage: string,
+  gameId: string,
+  leaverConnectionId: string
+): Promise<void> {
+  const g = await doc.send(new GetCommand({ TableName: GAMES, Key: { gameId } }));
+  const game = g.Item;
+  if (!game || game.status !== "active") return;
+
+  const players = game.players as Player[];
+  const winnerIndex = players.findIndex((p) => p.connectionId !== leaverConnectionId);
+
+  try {
+    await doc.send(
+      new UpdateCommand({
+        TableName: GAMES,
+        Key: { gameId },
+        UpdateExpression: "SET #s = :finished",
+        ConditionExpression: "#s = :active",
+        ExpressionAttributeNames: { "#s": "status" },
+        ExpressionAttributeValues: { ":finished": "finished", ":active": "active" },
+      })
+    );
+  } catch (e) {
+    if (isConditionFail(e)) return; // already finished
+    throw e;
+  }
+
+  if (winnerIndex >= 0) {
+    await push(domainName, stage, players[winnerIndex].connectionId, {
+      type: "opponentLeft",
+      winnerIndex,
+      scores: [Number(game.scores[0]), Number(game.scores[1])],
+    }).catch(() => undefined);
   }
 }

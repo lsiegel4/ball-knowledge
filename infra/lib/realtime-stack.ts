@@ -37,11 +37,14 @@ export class RealtimeStack extends cdk.Stack {
     const echoFn = fn("EchoFn", "handlers.ts", "echo");
     const findMatchFn = fn("FindMatchFn", "matchmaking.ts", "findMatch");
     const submitPickFn = fn("SubmitPickFn", "game.ts", "submitPick");
+    const roundTimeoutFn = fn("RoundTimeoutFn", "game.ts", "roundTimeout");
 
-    // connect writes its Connection row; disconnect deletes it + clears queue.
+    // connect writes its Connection row; disconnect reads it, deletes it, clears
+    // the queue, and abandons the game (opponent wins) if it was mid-match.
     props.connectionsTable.grantWriteData(connectFn);
-    props.connectionsTable.grantWriteData(disconnectFn);
+    props.connectionsTable.grantReadWriteData(disconnectFn);
     props.matchmakingTable.grantWriteData(disconnectFn);
+    props.gamesTable.grantReadWriteData(disconnectFn);
 
     // findMatch claims the queue, creates the game, links sockets, starts round 1.
     props.matchmakingTable.grantReadWriteData(findMatchFn);
@@ -53,6 +56,11 @@ export class RealtimeStack extends cdk.Stack {
     props.connectionsTable.grantReadData(submitPickFn);
     props.gamesTable.grantReadWriteData(submitPickFn);
     props.categoriesTable.grantReadData(submitPickFn);
+
+    // roundTimeout resolves a round after the deadline (no-show / both no-show).
+    props.connectionsTable.grantReadData(roundTimeoutFn);
+    props.gamesTable.grantReadWriteData(roundTimeoutFn);
+    props.categoriesTable.grantReadData(roundTimeoutFn);
 
     const wsApi = new WebSocketApi(this, "WsApi", {
       apiName: "ball-knowledge-ws",
@@ -73,6 +81,9 @@ export class RealtimeStack extends cdk.Stack {
     wsApi.addRoute("submitPick", {
       integration: new WebSocketLambdaIntegration("SubmitPickInt", submitPickFn),
     });
+    wsApi.addRoute("roundTimeout", {
+      integration: new WebSocketLambdaIntegration("RoundTimeoutInt", roundTimeoutFn),
+    });
 
     const stage = new WebSocketStage(this, "DevStage", {
       webSocketApi: wsApi,
@@ -84,6 +95,8 @@ export class RealtimeStack extends cdk.Stack {
     wsApi.grantManageConnections(echoFn);
     wsApi.grantManageConnections(findMatchFn);
     wsApi.grantManageConnections(submitPickFn);
+    wsApi.grantManageConnections(roundTimeoutFn);
+    wsApi.grantManageConnections(disconnectFn);
 
     new cdk.CfnOutput(this, "WsUrl", { value: stage.url });
   }
