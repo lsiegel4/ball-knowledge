@@ -9,6 +9,7 @@ import {
   PutCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { doc, GAMES, CONNECTIONS, MATCHMAKING, push } from "./shared";
+import { startRound } from "./game";
 
 const QUEUE_KEY = { pk: "queue" };
 const MAX_ATTEMPTS = 5;
@@ -156,4 +157,10 @@ async function startGame(
       )
     )
   );
+
+  // Kick off round 1: assign a category + deadline, push roundStart to both.
+  await startRound(domainName, stage, gameId, 1, [
+    { connectionId: connA },
+    { connectionId: connB },
+  ]);
 }

@@ -11,6 +11,8 @@ interface RealtimeStackProps extends cdk.StackProps {
   gamesTable: dynamodb.ITable;
   connectionsTable: dynamodb.ITable;
   matchmakingTable: dynamodb.ITable;
+  categoriesTable: dynamodb.ITable;
+  playersTable: dynamodb.ITable;
 }
 
 export class RealtimeStack extends cdk.Stack {
@@ -21,6 +23,8 @@ export class RealtimeStack extends cdk.Stack {
       CONNECTIONS_TABLE: props.connectionsTable.tableName,
       GAMES_TABLE: props.gamesTable.tableName,
       MATCHMAKING_TABLE: props.matchmakingTable.tableName,
+      CATEGORIES_TABLE: props.categoriesTable.tableName,
+      PLAYERS_TABLE: props.playersTable.tableName,
     };
     const fn = (name: string, entryFile: string, handler: string) =>
       new NodejsFunction(this, name, {
@@ -34,16 +38,24 @@ export class RealtimeStack extends cdk.Stack {
     const disconnectFn = fn("DisconnectFn", "handlers.ts", "disconnect");
     const echoFn = fn("EchoFn", "handlers.ts", "echo");
     const findMatchFn = fn("FindMatchFn", "matchmaking.ts", "findMatch");
+    const submitPickFn = fn("SubmitPickFn", "game.ts", "submitPick");
 
     // connect writes its Connection row; disconnect deletes it + clears queue.
     props.connectionsTable.grantWriteData(connectFn);
     props.connectionsTable.grantWriteData(disconnectFn);
     props.matchmakingTable.grantWriteData(disconnectFn);
 
-    // findMatch reads/claims the queue, creates the game, links both sockets.
+    // findMatch claims the queue, creates the game, links sockets, starts round 1.
     props.matchmakingTable.grantReadWriteData(findMatchFn);
     props.gamesTable.grantWriteData(findMatchFn);
     props.connectionsTable.grantWriteData(findMatchFn);
+    props.categoriesTable.grantReadData(findMatchFn);
+
+    // submitPick validates + records a pick, resolves the round when both are in.
+    props.connectionsTable.grantReadData(submitPickFn);
+    props.gamesTable.grantReadWriteData(submitPickFn);
+    props.categoriesTable.grantReadData(submitPickFn);
+    props.playersTable.grantReadData(submitPickFn);
 
     const wsApi = new WebSocketApi(this, "WsApi", {
       apiName: "ball-knowledge-ws",
@@ -61,6 +73,9 @@ export class RealtimeStack extends cdk.Stack {
     wsApi.addRoute("findMatch", {
       integration: new WebSocketLambdaIntegration("FindMatchInt", findMatchFn),
     });
+    wsApi.addRoute("submitPick", {
+      integration: new WebSocketLambdaIntegration("SubmitPickInt", submitPickFn),
+    });
 
     const stage = new WebSocketStage(this, "DevStage", {
       webSocketApi: wsApi,
@@ -71,6 +86,7 @@ export class RealtimeStack extends cdk.Stack {
     // Handlers that push messages back to clients need ManageConnections.
     wsApi.grantManageConnections(echoFn);
     wsApi.grantManageConnections(findMatchFn);
+    wsApi.grantManageConnections(submitPickFn);
 
     new cdk.CfnOutput(this, "WsUrl", { value: stage.url });
   }
