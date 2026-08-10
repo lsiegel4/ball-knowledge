@@ -150,9 +150,11 @@ async function startGame(
     )
   );
 
+  // Each socket learns its own player index (0 or 1) so the client can render
+  // its score vs the opponent's and tell if it won.
   await Promise.all(
-    [connA, connB].map((c) =>
-      push(domainName, stage, c, { type: "matchFound", gameId, round: 1 }).catch(
+    [connA, connB].map((c, playerIndex) =>
+      push(domainName, stage, c, { type: "matchFound", gameId, round: 1, playerIndex }).catch(
         () => undefined // opponent may have vanished; abandonment handled later
       )
     )

@@ -7,11 +7,14 @@ import {
   getCurrentUser,
 } from "aws-amplify/auth";
 import { DailyChallenge } from "./DailyChallenge";
+import { HeadToHead } from "./HeadToHead";
 
 type Stage = "signIn" | "signUp" | "confirm" | "authed";
+type Mode = "daily" | "h2h";
 
 export function App() {
   const [stage, setStage] = useState<Stage>("signIn");
+  const [mode, setMode] = useState<Mode>("daily");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -66,7 +69,15 @@ export function App() {
       {stage === "authed" ? (
         <>
           <button onClick={doSignOut} style={{ float: "right" }}>Sign out</button>
-          <DailyChallenge />
+          <div style={{ marginBottom: "1rem" }}>
+            <button onClick={() => setMode("daily")} disabled={mode === "daily"}>
+              Daily Challenge
+            </button>{" "}
+            <button onClick={() => setMode("h2h")} disabled={mode === "h2h"}>
+              Head-to-Head
+            </button>
+          </div>
+          {mode === "daily" ? <DailyChallenge /> : <HeadToHead />}
         </>
       ) : (
         <>
