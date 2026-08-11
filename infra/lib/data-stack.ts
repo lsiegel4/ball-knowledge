@@ -12,6 +12,7 @@ export class DataStack extends cdk.Stack {
   public readonly connectionsTable: dynamodb.Table;
   public readonly matchmakingTable: dynamodb.Table;
   public readonly categoriesTable: dynamodb.Table;
+  public readonly categoryStatsTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -87,6 +88,18 @@ export class DataStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    // Live pick counts per category. PK categoryId, SK playerId; a sentinel
+    // SK "__total__" row holds the category total. Atomic ADD counters, one row
+    // per player -> no hot-partition contention on gameplay writes. Regenerable
+    // from play, so no PITR.
+    this.categoryStatsTable = new dynamodb.Table(this, "CategoryStatsTable", {
+      tableName: "ball-knowledge-category-stats",
+      partitionKey: { name: "categoryId", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "playerId", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     new cdk.CfnOutput(this, "RawBucketName", { value: this.rawBucket.bucketName });
     new cdk.CfnOutput(this, "PlayersTableName", { value: this.playersTable.tableName });
     new cdk.CfnOutput(this, "DailyPicksTableName", { value: this.dailyPicksTable.tableName });
@@ -95,5 +108,6 @@ export class DataStack extends cdk.Stack {
     new cdk.CfnOutput(this, "ConnectionsTableName", { value: this.connectionsTable.tableName });
     new cdk.CfnOutput(this, "MatchmakingTableName", { value: this.matchmakingTable.tableName });
     new cdk.CfnOutput(this, "CategoriesTableName", { value: this.categoriesTable.tableName });
+    new cdk.CfnOutput(this, "CategoryStatsTableName", { value: this.categoryStatsTable.tableName });
   }
 }

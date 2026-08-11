@@ -12,6 +12,7 @@ interface RealtimeStackProps extends cdk.StackProps {
   connectionsTable: dynamodb.ITable;
   matchmakingTable: dynamodb.ITable;
   categoriesTable: dynamodb.ITable;
+  categoryStatsTable: dynamodb.ITable;
 }
 
 export class RealtimeStack extends cdk.Stack {
@@ -23,6 +24,7 @@ export class RealtimeStack extends cdk.Stack {
       GAMES_TABLE: props.gamesTable.tableName,
       MATCHMAKING_TABLE: props.matchmakingTable.tableName,
       CATEGORIES_TABLE: props.categoriesTable.tableName,
+      CATEGORY_STATS_TABLE: props.categoryStatsTable.tableName,
     };
     const fn = (name: string, entryFile: string, handler: string) =>
       new NodejsFunction(this, name, {
@@ -30,6 +32,10 @@ export class RealtimeStack extends cdk.Stack {
         entry: path.join(__dirname, `../../services/realtime/src/${entryFile}`),
         handler,
         environment: env,
+        // Resolver path chains ~13 DynamoDB/API calls; 3s default is too tight.
+        // 256MB also gets more CPU, cutting cold-start + per-call latency.
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 256,
       });
 
     const connectFn = fn("ConnectFn", "handlers.ts", "connect");
@@ -56,6 +62,8 @@ export class RealtimeStack extends cdk.Stack {
     props.connectionsTable.grantReadData(submitPickFn);
     props.gamesTable.grantReadWriteData(submitPickFn);
     props.categoriesTable.grantReadData(submitPickFn);
+    // Reads live pick counts to blend the effective score, ADD-increments them.
+    props.categoryStatsTable.grantReadWriteData(submitPickFn);
 
     // roundTimeout resolves a round after the deadline (no-show / both no-show).
     props.connectionsTable.grantReadData(roundTimeoutFn);

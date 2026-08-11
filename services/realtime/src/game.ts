@@ -7,10 +7,50 @@ import {
   UpdateCommand,
   ScanCommand,
 } from "@aws-sdk/lib-dynamodb";
-import { doc, GAMES, CONNECTIONS, CATEGORIES, push } from "./shared";
+import { doc, GAMES, CONNECTIONS, CATEGORIES, CATEGORY_STATS, push } from "./shared";
 
 const ROUND_MS = 30_000;
 const WIN_SCORE = 4;
+
+// Prior weight, in phantom picks. effective = (K*prior + picks) / (K + total).
+// total == K is the crossover where the seeded prior and observed behavior
+// weigh equally; below it the prior dominates, above it real picks take over.
+const K = 50;
+const TOTAL_SK = "__total__";
+
+// Blend the category-relative fame prior with observed pick counts. Two picks
+// converging (everyone piling on one "obscure" player) raises his score until
+// he starts losing — the intended minority-game feedback loop.
+async function effectiveScore(
+  categoryId: string,
+  playerId: string,
+  prior: number
+): Promise<number> {
+  const [p, t] = await Promise.all([
+    doc.send(new GetCommand({ TableName: CATEGORY_STATS, Key: { categoryId, playerId } })),
+    doc.send(new GetCommand({ TableName: CATEGORY_STATS, Key: { categoryId, playerId: TOTAL_SK } })),
+  ]);
+  const picks = Number(p.Item?.picks ?? 0);
+  const total = Number(t.Item?.picks ?? 0);
+  return (K * prior + picks) / (K + total);
+}
+
+// Count a locked pick: +1 the player row and the category total. Atomic ADD
+// upserts, so no read-modify-write race and no cross-player contention.
+async function countPick(categoryId: string, playerId: string): Promise<void> {
+  await Promise.all(
+    [playerId, TOTAL_SK].map((sk) =>
+      doc.send(
+        new UpdateCommand({
+          TableName: CATEGORY_STATS,
+          Key: { categoryId, playerId: sk },
+          UpdateExpression: "ADD picks :one",
+          ExpressionAttributeValues: { ":one": 1 },
+        })
+      )
+    )
+  );
+}
 
 type Player = { connectionId: string };
 
@@ -37,14 +77,21 @@ type Category = {
   valid: Record<string, { name: string; fame: number }>;
 };
 
+// Category ids are static seed data. Cache the list in module scope so warm
+// invocations skip the full-table Scan and only do the one Get for the chosen
+// category's valid map.
+let categoryIds: string[] | null = null;
+
 async function randomCategory(): Promise<Category> {
-  const ids = await doc.send(
-    new ScanCommand({ TableName: CATEGORIES, ProjectionExpression: "categoryId" })
-  );
-  const pool = ids.Items ?? [];
-  const chosen = pool[Math.floor(Math.random() * pool.length)];
+  if (!categoryIds) {
+    const ids = await doc.send(
+      new ScanCommand({ TableName: CATEGORIES, ProjectionExpression: "categoryId" })
+    );
+    categoryIds = (ids.Items ?? []).map((i) => i.categoryId as string);
+  }
+  const chosen = categoryIds[Math.floor(Math.random() * categoryIds.length)];
   const full = await doc.send(
-    new GetCommand({ TableName: CATEGORIES, Key: { categoryId: chosen.categoryId } })
+    new GetCommand({ TableName: CATEGORIES, Key: { categoryId: chosen } })
   );
   const c = full.Item!;
   return { categoryId: c.categoryId, label: c.label, valid: c.valid };
@@ -122,17 +169,23 @@ export const submitPick = async (
     return { statusCode: 200 };
   }
 
-  // Membership + fame both come from the category itself — no players lookup.
+  // Membership + fame prior both come from the category itself — no players
+  // lookup. The prior seeds the live score; observed picks pull it around.
   const entry = (game.category.valid as Category["valid"])[playerId];
   if (!entry) {
     await push(domainName, stage, me, { type: "invalidPick" });
     return { statusCode: 200 };
   }
 
+  const categoryId: string = game.category.categoryId;
+  const score = await effectiveScore(categoryId, playerId, Number(entry.fame));
+
+  // Snapshot the live effective score onto the pick. resolveRound compares these
+  // frozen snapshots, so scores can't drift mid-round.
   const pick = {
     playerId,
     playerName: entry.name,
-    fameScore: Number(entry.fame),
+    fameScore: score,
     submittedAt: Date.now(),
   };
 
@@ -165,6 +218,9 @@ export const submitPick = async (
   }
 
   await push(domainName, stage, me, { type: "pickAccepted", playerName: pick.playerName });
+
+  // Count only locked picks (rejects/too-late never reach here).
+  await countPick(categoryId, playerId);
 
   const picks = updated.picks as Record<string, typeof pick>;
   if (picks["0"] && picks["1"]) {
@@ -239,6 +295,12 @@ async function resolveRound(
     values: { ":curD": Number(game.deadline), ":active": "active" } as Record<string, unknown>,
   };
 
+  // Next-round state, computed here and reused for the roundStart push below so
+  // we never re-read the game we just wrote (this invoke is the sole resolver).
+  let nextRound = round;
+  let nextCategory: Category | null = null;
+  let nextDeadline = 0;
+
   try {
     if (over) {
       await doc.send(
@@ -252,8 +314,9 @@ async function resolveRound(
         })
       );
     } else {
-      const nextRound = replay ? round : round + 1;
-      const category = await randomCategory();
+      nextRound = replay ? round : round + 1;
+      nextCategory = await randomCategory();
+      nextDeadline = Date.now() + ROUND_MS;
       await doc.send(
         new UpdateCommand({
           TableName: GAMES,
@@ -266,8 +329,8 @@ async function resolveRound(
             ...guard.values,
             ":s": scores,
             ":nr": nextRound,
-            ":c": category,
-            ":d": Date.now() + ROUND_MS,
+            ":c": nextCategory,
+            ":d": nextDeadline,
             ":empty": {},
           },
         })
@@ -293,13 +356,11 @@ async function resolveRound(
   if (over) {
     await pushBoth(domainName, stage, players, { type: "matchOver", scores, winnerIndex });
   } else {
-    const g = await doc.send(new GetCommand({ TableName: GAMES, Key: { gameId } }));
-    const next = g.Item!;
     await pushBoth(domainName, stage, players, {
       type: "roundStart",
-      round: Number(next.round),
-      category: { categoryId: next.category.categoryId, label: next.category.label },
-      deadline: Number(next.deadline),
+      round: nextRound,
+      category: { categoryId: nextCategory!.categoryId, label: nextCategory!.label },
+      deadline: nextDeadline,
     });
   }
 }
