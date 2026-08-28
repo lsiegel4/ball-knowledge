@@ -1,10 +1,12 @@
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as cognito from "aws-cdk-lib/aws-cognito";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import { Runtime } from "aws-cdk-lib/aws-lambda";
 import { WebSocketApi, WebSocketStage } from "aws-cdk-lib/aws-apigatewayv2";
 import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import { WebSocketLambdaAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import * as path from "path";
 
 interface RealtimeStackProps extends cdk.StackProps {
@@ -13,6 +15,8 @@ interface RealtimeStackProps extends cdk.StackProps {
   matchmakingTable: dynamodb.ITable;
   categoriesTable: dynamodb.ITable;
   categoryStatsTable: dynamodb.ITable;
+  userPool: cognito.IUserPool;
+  userPoolClient: cognito.IUserPoolClient;
 }
 
 export class RealtimeStack extends cdk.Stack {
@@ -37,6 +41,21 @@ export class RealtimeStack extends cdk.Stack {
         timeout: cdk.Duration.seconds(10),
         memorySize: 256,
       });
+
+    // Authorizer verifies the Cognito idToken passed as ?token= on the WS
+    // handshake (browsers can't set headers on new WebSocket). Its own env
+    // needs the pool + client to check signature, issuer, and audience.
+    const authorizerFn = new NodejsFunction(this, "WsAuthorizerFn", {
+      runtime: Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, "../../services/realtime/src/authorizer.ts"),
+      handler: "authorize",
+      environment: {
+        USER_POOL_ID: props.userPool.userPoolId,
+        USER_POOL_CLIENT_ID: props.userPoolClient.userPoolClientId,
+      },
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 256,
+    });
 
     const connectFn = fn("ConnectFn", "handlers.ts", "connect");
     const disconnectFn = fn("DisconnectFn", "handlers.ts", "disconnect");
@@ -74,6 +93,9 @@ export class RealtimeStack extends cdk.Stack {
       apiName: "ball-knowledge-ws",
       connectRouteOptions: {
         integration: new WebSocketLambdaIntegration("ConnectInt", connectFn),
+        authorizer: new WebSocketLambdaAuthorizer("WsAuthorizer", authorizerFn, {
+          identitySource: ["route.request.querystring.token"],
+        }),
       },
       disconnectRouteOptions: {
         integration: new WebSocketLambdaIntegration("DisconnectInt", disconnectFn),

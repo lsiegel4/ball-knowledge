@@ -43,6 +43,8 @@ new RealtimeStack(app, "BallKnowledge-Realtime", {
   matchmakingTable: data.matchmakingTable,
   categoriesTable: data.categoriesTable,
   categoryStatsTable: data.categoryStatsTable,
+  userPool: auth.userPool,
+  userPoolClient: auth.userPoolClient,
 });
 
 new HostingStack(app, "BallKnowledge-Hosting", { env });

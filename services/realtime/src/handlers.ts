@@ -16,11 +16,18 @@ const TTL_SECONDS = 2 * 60 * 60;
 export const connect = async (
   event: APIGatewayProxyWebsocketEventV2
 ): Promise<APIGatewayProxyResultV2> => {
+  // The authorizer proved this socket's identity at handshake and passed the
+  // Cognito sub through as context. Persist it so later handlers (findMatch,
+  // submitPick) trust the socket without re-validating the JWT.
+  const userId = (event.requestContext as { authorizer?: { userId?: string } })
+    .authorizer?.userId;
+
   await doc.send(
     new PutCommand({
       TableName: CONNECTIONS,
       Item: {
         connectionId: event.requestContext.connectionId,
+        userId: userId ?? null,
         gameId: null,
         expireAt: Math.floor(Date.now() / 1000) + TTL_SECONDS,
       },

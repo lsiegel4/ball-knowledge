@@ -127,16 +127,20 @@ export function HeadToHead() {
     }
   }, []);
 
-  const findMatch = () => {
-    const ws = new WebSocket(WS_URL);
+  const findMatch = async () => {
+    setPhase("waiting");
+    setNote("");
+    // Browsers can't set headers on new WebSocket, so the JWT rides the URL as
+    // ?token=... — the $connect authorizer validates it before the socket opens.
+    const session = await fetchAuthSession();
+    const token = session.tokens?.idToken?.toString();
+    const ws = new WebSocket(`${WS_URL}?token=${token}`);
     wsRef.current = ws;
     ws.onopen = () => ws.send(JSON.stringify({ action: "findMatch" }));
     ws.onmessage = (e) => onMessage(e.data);
     ws.onclose = () => {
       if (phase === "waiting" || phase === "playing") setNote("Disconnected.");
     };
-    setPhase("waiting");
-    setNote("");
   };
 
   const pick = (p: Player) => {
