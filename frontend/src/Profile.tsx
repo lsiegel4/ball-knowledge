@@ -1,4 +1,15 @@
 import { useState, useEffect } from "react";
+import {
+  Card,
+  Group,
+  Stack,
+  Text,
+  Title,
+  Badge,
+  Divider,
+  Center,
+  Loader,
+} from "@mantine/core";
 
 type Match = {
   gameId: string;
@@ -31,36 +42,78 @@ export function Profile({ authHeaders, apiUrl }: Props) {
     })();
   }, [authHeaders, apiUrl]);
 
-  if (!data) return <p>Loading…</p>;
+  if (!data) {
+    return (
+      <Center py={60}>
+        <Loader color="azure" size="sm" />
+      </Center>
+    );
+  }
+
+  const winRate = data.played ? Math.round((data.wins / data.played) * 100) : 0;
 
   return (
-    <div>
-      <h3>@{data.handle}</h3>
-      <p style={{ fontSize: "1.2rem" }}>
-        {data.wins}W – {data.losses}L{" "}
-        <span style={{ color: "#666", fontSize: "0.9rem" }}>({data.played} played)</span>
-      </p>
+    <Stack gap="lg">
+      <Card withBorder radius="md" padding="lg" bg="dark.6">
+        <Text size="xl" fw={300} mb="md">
+          @{data.handle}
+        </Text>
+        <Group gap={40}>
+          <Stat label="Wins" value={data.wins} />
+          <Stat label="Losses" value={data.losses} />
+          <Stat label="Win rate" value={data.played ? `${winRate}%` : "—"} />
+        </Group>
+      </Card>
 
-      <h4>Recent matches</h4>
-      {data.recent.length === 0 ? (
-        <p style={{ color: "#666" }}>No matches yet.</p>
-      ) : (
-        <ul style={{ listStyle: "none", padding: 0 }}>
-          {data.recent.map((m) => (
-            <li
-              key={m.gameId}
-              style={{ padding: "0.4rem 0", borderBottom: "1px solid #eee", display: "flex", gap: "0.5rem" }}
-            >
-              <b style={{ color: m.won ? "green" : "crimson", width: "2.5rem" }}>
-                {m.won ? "WIN" : "LOSS"}
-              </b>
-              <span>
-                {m.myScore}–{m.oppScore} vs @{m.oppHandle ?? "unknown"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div>
+        <Text size="xs" tt="uppercase" c="dimmed" fw={600} style={{ letterSpacing: "0.14em" }} mb="xs">
+          Recent matches
+        </Text>
+        {data.recent.length === 0 ? (
+          <Text c="dimmed" size="sm">
+            No matches yet. Head to Head-to-Head to play your first.
+          </Text>
+        ) : (
+          <Card withBorder radius="md" padding={0} bg="dark.6">
+            {data.recent.map((m, i) => (
+              <div key={m.gameId}>
+                {i > 0 && <Divider color="dark.5" />}
+                <Group justify="space-between" px="md" py="sm">
+                  <Group gap="sm">
+                    <Badge
+                      variant="light"
+                      color={m.won ? "azure" : "gray"}
+                      radius="sm"
+                      w={52}
+                    >
+                      {m.won ? "Win" : "Loss"}
+                    </Badge>
+                    <Text size="sm" c="dimmed">
+                      vs @{m.oppHandle ?? "unknown"}
+                    </Text>
+                  </Group>
+                  <Text size="sm" fw={500} style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {m.myScore}–{m.oppScore}
+                  </Text>
+                </Group>
+              </div>
+            ))}
+          </Card>
+        )}
+      </div>
+    </Stack>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div>
+      <Title order={2} fw={300} style={{ fontVariantNumeric: "tabular-nums" }}>
+        {value}
+      </Title>
+      <Text size="xs" tt="uppercase" c="dimmed" fw={600} style={{ letterSpacing: "0.1em" }}>
+        {label}
+      </Text>
     </div>
   );
 }

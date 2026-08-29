@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
+import { Card, Stack, Title, Text, TextInput, Button } from "@mantine/core";
 
 const HANDLE_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
@@ -15,8 +16,9 @@ export function ChooseHandle({ onClaimed, authHeaders, apiUrl }: Props) {
   const [busy, setBusy] = useState(false);
 
   const valid = HANDLE_RE.test(value);
+  const touched = value.length > 0;
 
-  const submit = async (e: FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid || busy) return;
     setBusy(true);
@@ -34,28 +36,37 @@ export function ChooseHandle({ onClaimed, authHeaders, apiUrl }: Props) {
       }
       onClaimed(body.handle);
     } catch {
-      setError("Network error.");
+      setError("Network error — try again.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <form onSubmit={submit}>
-      <h3>Pick a handle</h3>
-      <p style={{ color: "#666", fontSize: "0.9rem" }}>
-        3–20 characters: letters, numbers, underscore. This is permanent.
-      </p>
-      <input
-        placeholder="handle"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        style={{ padding: "0.4rem" }}
-      />{" "}
-      <button type="submit" disabled={!valid || busy}>
-        {busy ? "Claiming…" : "Claim"}
-      </button>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-    </form>
+    <Card withBorder radius="md" padding="lg" bg="dark.6">
+      <form onSubmit={submit}>
+        <Stack>
+          <div>
+            <Title order={3} fw={400}>
+              Pick a handle
+            </Title>
+            <Text size="sm" c="dimmed" mt={4}>
+              3–20 characters: letters, numbers, underscore. This is permanent.
+            </Text>
+          </div>
+          <TextInput
+            placeholder="handle"
+            value={value}
+            onChange={(e) => setValue(e.currentTarget.value)}
+            leftSection={<Text c="dimmed">@</Text>}
+            error={touched && !valid ? "Invalid format" : error || undefined}
+            data-autofocus
+          />
+          <Button type="submit" loading={busy} disabled={!valid} fullWidth>
+            Claim handle
+          </Button>
+        </Stack>
+      </form>
+    </Card>
   );
 }

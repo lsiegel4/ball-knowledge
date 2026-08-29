@@ -1,5 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
+import {
+  Card,
+  Stack,
+  Group,
+  Text,
+  Title,
+  TextInput,
+  UnstyledButton,
+  Badge,
+  Center,
+  Loader,
+} from "@mantine/core";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -30,18 +42,22 @@ function ResultsView({ pick, results, label }: DayResult & { label: string }) {
   if (!results) return null;
   const iWon = pick && results.winner.playerId === pick.playerId;
   return (
-    <div style={{ background: "#f4f4f4", padding: "0.75rem", marginTop: "1rem" }}>
-      <h3 style={{ margin: "0 0 0.5rem" }}>{label}</h3>
-      <p style={{ margin: "0.25rem 0" }}>
-        Winner: <b>{results.winner.playerName}</b> — {results.winner.count} of{" "}
-        {results.totalPicks} picks
-      </p>
+    <Card withBorder radius="md" padding="md" bg="dark.6">
+      <Text size="xs" tt="uppercase" c="dimmed" fw={600} style={{ letterSpacing: "0.12em" }} mb="xs">
+        {label}
+      </Text>
+      <Text size="sm">
+        Winner: <b>{results.winner.playerName}</b>{" "}
+        <Text span c="dimmed">
+          — {results.winner.count} of {results.totalPicks} picks
+        </Text>
+      </Text>
       {pick && (
-        <p style={{ margin: "0.25rem 0" }}>
-          You picked {pick.playerName}. {iWon ? "🏆 You won!" : "Not this time."}
-        </p>
+        <Text size="sm" mt={4} c={iWon ? "azure.4" : "dimmed"}>
+          You picked {pick.playerName}. {iWon ? "You won 🏆" : "Not this time."}
+        </Text>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -89,38 +105,82 @@ export function DailyChallenge() {
       setMsg(`Picked ${p.name}.`);
       loadToday();
     } else {
-      setMsg(`Error: HTTP ${res.status}`);
+      setMsg(`Could not save pick (HTTP ${res.status}).`);
     }
   };
 
-  if (!today) return <p>Loading…</p>;
+  if (!today) {
+    return (
+      <Center py={60}>
+        <Loader color="azure" size="sm" />
+      </Center>
+    );
+  }
 
   return (
-    <div>
-      <h3>Daily Challenge — {today.day}</h3>
-      <p>Name a player. Least-picked wins. Resets midnight ET.</p>
-      {today.pick && (
-        <p>
-          Current pick: <b>{today.pick.playerName}</b> (change until tonight)
-        </p>
-      )}
-      <input
-        placeholder="search player…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        style={{ width: "100%", padding: "0.4rem" }}
-      />
-      <ul style={{ listStyle: "none", padding: 0 }}>
-        {hits.map((p) => (
-          <li key={p.playerId} style={{ margin: "0.25rem 0" }}>
-            <button onClick={() => pick(p)}>{p.name}</button>
-          </li>
-        ))}
-      </ul>
-      {msg && <p>{msg}</p>}
+    <Stack gap="lg">
+      <div>
+        <Group justify="space-between" align="baseline">
+          <Title order={3} fw={400}>
+            Daily Challenge
+          </Title>
+          <Text size="xs" c="dimmed">
+            {today.day}
+          </Text>
+        </Group>
+        <Text size="sm" c="dimmed" mt={4}>
+          Name a player. Least-picked wins. Resets midnight ET.
+        </Text>
+      </div>
 
-      <ResultsView label={`Today's results — ${today.day}`} {...today} />
-      <ResultsView label={`Yesterday — ${today.yesterday.day}`} {...today.yesterday} />
-    </div>
+      {today.pick && (
+        <Card withBorder radius="md" padding="sm" bg="dark.6">
+          <Group justify="space-between">
+            <Text size="sm">
+              <Text span c="dimmed">
+                Your pick:{" "}
+              </Text>
+              <b>{today.pick.playerName}</b>
+            </Text>
+            <Badge variant="light" color="azure" radius="sm">
+              change until tonight
+            </Badge>
+          </Group>
+        </Card>
+      )}
+
+      <div>
+        <TextInput
+          placeholder="Search a player…"
+          value={q}
+          onChange={(e) => setQ(e.currentTarget.value)}
+        />
+        {hits.length > 0 && (
+          <Card withBorder radius="md" padding={4} bg="dark.6" mt={6}>
+            {hits.map((p) => (
+              <UnstyledButton
+                key={p.playerId}
+                onClick={() => pick(p)}
+                p="xs"
+                display="block"
+                w="100%"
+                style={{ borderRadius: 6 }}
+                className="hoverrow"
+              >
+                <Text size="sm">{p.name}</Text>
+              </UnstyledButton>
+            ))}
+          </Card>
+        )}
+        {msg && (
+          <Text size="sm" c="dimmed" mt="xs">
+            {msg}
+          </Text>
+        )}
+      </div>
+
+      <ResultsView label={`Today · ${today.day}`} {...today} />
+      <ResultsView label={`Yesterday · ${today.yesterday.day}`} {...today.yesterday} />
+    </Stack>
   );
 }

@@ -1,8 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
+import {
+  Card,
+  Stack,
+  Group,
+  Text,
+  Title,
+  Button,
+  TextInput,
+  UnstyledButton,
+  RingProgress,
+  Badge,
+  Loader,
+  Center,
+} from "@mantine/core";
 
 const WS_URL = import.meta.env.VITE_WS_URL;
 const API_URL = import.meta.env.VITE_API_URL;
+const ROUND_SECONDS = 30;
 
 type Phase = "idle" | "waiting" | "playing" | "over";
 type Player = { playerId: string; name: string; fameScore: number };
@@ -164,88 +179,185 @@ export function HeadToHead() {
   const myScore = scores[myIndex];
   const oppScore = scores[1 - myIndex];
 
+  // ---- idle ----
   if (phase === "idle") {
     return (
-      <div>
-        <h3>Head-to-Head</h3>
-        <p>Best of 7. Same category, pick a valid player in 30s. Most obscure wins.</p>
-        <button onClick={findMatch}>Find match</button>
-        {note && <p>{note}</p>}
-      </div>
+      <Card withBorder radius="md" padding="xl" bg="dark.6">
+        <Stack align="center" gap="md">
+          <Title order={3} fw={400} ta="center">
+            Head-to-Head
+          </Title>
+          <Text size="sm" c="dimmed" ta="center" maw={360}>
+            Best of 7. Same category for both players — name a valid player in 30
+            seconds. Most obscure pick wins the round.
+          </Text>
+          <Button size="md" onClick={findMatch}>
+            Find a match
+          </Button>
+          {note && (
+            <Text size="sm" c="red.5">
+              {note}
+            </Text>
+          )}
+        </Stack>
+      </Card>
     );
   }
 
+  // ---- waiting ----
   if (phase === "waiting") {
     return (
-      <div>
-        <h3>Head-to-Head</h3>
-        <p>Searching for an opponent…</p>
-        <button onClick={leave}>Cancel</button>
-      </div>
+      <Card withBorder radius="md" padding="xl" bg="dark.6">
+        <Stack align="center" gap="lg">
+          <Loader color="azure" />
+          <Text c="dimmed">Searching for an opponent…</Text>
+          <Button variant="subtle" color="gray" onClick={leave}>
+            Cancel
+          </Button>
+        </Stack>
+      </Card>
     );
   }
 
+  // ---- over ----
   if (phase === "over") {
     const won = finalWinner === myIndex;
     return (
-      <div>
-        <h3>Match over</h3>
-        <p style={{ fontSize: "1.4rem" }}>{won ? "🏆 You win!" : "You lose."}</p>
-        <p>
-          You {myScore} — {oppScore} Opponent
-        </p>
-        {result && <ResultLine result={result} myIndex={myIndex} />}
-        {note && <p>{note}</p>}
-        <button onClick={leave}>Back</button>
-      </div>
+      <Card withBorder radius="md" padding="xl" bg="dark.6">
+        <Stack align="center" gap="md">
+          <Badge size="lg" variant="light" color={won ? "azure" : "gray"}>
+            {won ? "You win" : "You lose"}
+          </Badge>
+          <ScoreLine my={myScore} opp={oppScore} />
+          {result && <ResultLine result={result} myIndex={myIndex} />}
+          {note && (
+            <Text size="sm" c="dimmed">
+              {note}
+            </Text>
+          )}
+          <Button variant="light" onClick={leave}>
+            Back
+          </Button>
+        </Stack>
+      </Card>
     );
   }
 
-  // playing
+  // ---- playing ----
+  const ringColor = remaining <= 5 ? "red.5" : "azure.4";
   return (
-    <div>
-      <h3>Head-to-Head — round {round}</h3>
-      <p>
-        You <b>{myScore}</b> — <b>{oppScore}</b> Opponent
-      </p>
+    <Stack gap="lg">
+      <Group justify="space-between" align="center">
+        <Title order={4} fw={400}>
+          Round {round}
+        </Title>
+        <ScoreLine my={myScore} opp={oppScore} compact />
+      </Group>
+
       {result && (
-        <div style={{ background: "#f4f4f4", padding: "0.5rem 0.75rem", marginBottom: "0.75rem", fontSize: "0.9rem" }}>
-          <div style={{ color: "#666", fontSize: "0.8rem" }}>Round {result.round}</div>
+        <Card withBorder radius="md" padding="sm" bg="dark.6">
+          <Text size="xs" tt="uppercase" c="dimmed" fw={600} style={{ letterSpacing: "0.12em" }} mb={4}>
+            Round {result.round}
+          </Text>
           <ResultLine result={result} myIndex={myIndex} />
+        </Card>
+      )}
+
+      <Card withBorder radius="md" padding="lg" bg="dark.6">
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <div>
+            <Text size="xs" tt="uppercase" c="dimmed" fw={600} style={{ letterSpacing: "0.14em" }}>
+              Category
+            </Text>
+            <Text size="xl" fw={300} mt={4}>
+              {category?.label}
+            </Text>
+          </div>
+          <RingProgress
+            size={78}
+            thickness={5}
+            roundCaps
+            sections={[{ value: (remaining / ROUND_SECONDS) * 100, color: ringColor }]}
+            label={
+              <Center>
+                <Text fw={500} style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {remaining}
+                </Text>
+              </Center>
+            }
+          />
+        </Group>
+      </Card>
+
+      {myPick ? (
+        <Group gap="sm" justify="center">
+          <Loader size="xs" color="azure" />
+          <Text size="sm" c="dimmed">
+            You picked <b style={{ color: "var(--mantine-color-gray-3)" }}>{myPick}</b> — waiting for opponent…
+          </Text>
+        </Group>
+      ) : (
+        <div>
+          <TextInput
+            placeholder="Search a valid player…"
+            value={q}
+            onChange={(e) => setQ(e.currentTarget.value)}
+            autoFocus
+          />
+          {hits.length > 0 && (
+            <Card withBorder radius="md" padding={4} bg="dark.6" mt={6}>
+              {hits.map((p) => (
+                <UnstyledButton
+                  key={p.playerId}
+                  onClick={() => pick(p)}
+                  p="xs"
+                  display="block"
+                  w="100%"
+                  style={{ borderRadius: 6 }}
+                  className="hoverrow"
+                >
+                  <Text size="sm">{p.name}</Text>
+                </UnstyledButton>
+              ))}
+            </Card>
+          )}
         </div>
       )}
 
-      <div style={{ margin: "0.75rem 0", padding: "0.75rem", background: "#eef" }}>
-        <div style={{ fontWeight: "bold" }}>{category?.label}</div>
-        <div>⏱ {remaining}s</div>
-      </div>
-
-      {myPick ? (
-        <p>
-          You picked <b>{myPick}</b>. Waiting for opponent…
-        </p>
-      ) : (
-        <>
-          <input
-            placeholder="search a valid player…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            style={{ width: "100%", padding: "0.4rem" }}
-          />
-          <ul style={{ listStyle: "none", padding: 0 }}>
-            {hits.map((p) => (
-              <li key={p.playerId} style={{ margin: "0.25rem 0" }}>
-                <button onClick={() => pick(p)}>{p.name}</button>
-              </li>
-            ))}
-          </ul>
-        </>
+      {note && (
+        <Text size="sm" c="red.5" ta="center">
+          {note}
+        </Text>
       )}
-      {note && <p style={{ color: "crimson" }}>{note}</p>}
-      <button onClick={leave} style={{ marginTop: "1rem" }}>
-        Forfeit
-      </button>
-    </div>
+
+      <Group justify="center">
+        <Button variant="subtle" color="gray" size="xs" onClick={leave}>
+          Forfeit
+        </Button>
+      </Group>
+    </Stack>
+  );
+}
+
+function ScoreLine({ my, opp, compact }: { my: number; opp: number; compact?: boolean }) {
+  return (
+    <Group gap="xs" align="baseline">
+      <Text fw={500} size={compact ? "lg" : "xl"} style={{ fontVariantNumeric: "tabular-nums" }}>
+        {my}
+      </Text>
+      <Text c="dimmed" size="sm">
+        you
+      </Text>
+      <Text c="dimmed" mx={4}>
+        ·
+      </Text>
+      <Text fw={500} size={compact ? "lg" : "xl"} style={{ fontVariantNumeric: "tabular-nums" }}>
+        {opp}
+      </Text>
+      <Text c="dimmed" size="sm">
+        opp
+      </Text>
+    </Group>
   );
 }
 
@@ -257,15 +369,22 @@ function ResultLine({ result, myIndex }: { result: RoundResult; myIndex: number 
     : result.winnerIndex === myIndex
     ? "You won the round"
     : "You lost the round";
+  const color = result.replay ? "dimmed" : result.winnerIndex === myIndex ? "azure.4" : "gray.5";
   return (
-    <div>
-      <p>
-        You: {mine ? `${mine.playerName} (${mine.fameScore.toFixed(2)})` : "no pick"} · Opponent:{" "}
+    <Stack gap={4}>
+      <Text size="sm">
+        <Text span c="dimmed">
+          You:{" "}
+        </Text>
+        {mine ? `${mine.playerName} (${mine.fameScore.toFixed(2)})` : "no pick"}
+        <Text span c="dimmed">
+          {"  ·  Opp: "}
+        </Text>
         {opp ? `${opp.playerName} (${opp.fameScore.toFixed(2)})` : "no pick"}
-      </p>
-      <p>
-        <b>{outcome}</b>
-      </p>
-    </div>
+      </Text>
+      <Text size="sm" fw={600} c={color}>
+        {outcome}
+      </Text>
+    </Stack>
   );
 }

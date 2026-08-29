@@ -1,0 +1,6 @@
+.hoverrow {
+  transition: background 120ms ease;
+}
+.hoverrow:hover {
+  background: var(--mantine-color-dark-5);
+}
