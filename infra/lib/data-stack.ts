@@ -14,6 +14,7 @@ export class DataStack extends cdk.Stack {
   public readonly categoriesTable: dynamodb.Table;
   public readonly categoryStatsTable: dynamodb.Table;
   public readonly usersTable: dynamodb.Table;
+  public readonly matchResultsTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -113,6 +114,18 @@ export class DataStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    // Per-user H2H match history. PK userId, SK "<endedAt>#<gameId>" so a
+    // Query returns a user's matches newest-first. Durable record (PITR on);
+    // opponent handle is snapshotted onto the row at write time.
+    this.matchResultsTable = new dynamodb.Table(this, "MatchResultsTable", {
+      tableName: "ball-knowledge-match-results",
+      partitionKey: { name: "userId", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "sk", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     new cdk.CfnOutput(this, "RawBucketName", { value: this.rawBucket.bucketName });
     new cdk.CfnOutput(this, "PlayersTableName", { value: this.playersTable.tableName });
     new cdk.CfnOutput(this, "DailyPicksTableName", { value: this.dailyPicksTable.tableName });
@@ -123,5 +136,6 @@ export class DataStack extends cdk.Stack {
     new cdk.CfnOutput(this, "CategoriesTableName", { value: this.categoriesTable.tableName });
     new cdk.CfnOutput(this, "CategoryStatsTableName", { value: this.categoryStatsTable.tableName });
     new cdk.CfnOutput(this, "UsersTableName", { value: this.usersTable.tableName });
+    new cdk.CfnOutput(this, "MatchResultsTableName", { value: this.matchResultsTable.tableName });
   }
 }

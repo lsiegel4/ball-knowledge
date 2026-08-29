@@ -8,8 +8,26 @@ import {
   UpdateCommand,
   PutCommand,
 } from "@aws-sdk/lib-dynamodb";
-import { doc, GAMES, CONNECTIONS, MATCHMAKING, push } from "./shared";
+import { doc, GAMES, CONNECTIONS, MATCHMAKING, USERS, push } from "./shared";
 import { startRound } from "./game";
+
+type Identity = { connectionId: string; userId: string; handle: string };
+
+// Resolve a socket to its durable identity: userId lives on the connection row
+// (written by $connect from the authorizer), handle on the user row.
+async function identity(connectionId: string): Promise<Identity | null> {
+  const conn = await doc.send(
+    new GetCommand({ TableName: CONNECTIONS, Key: { connectionId } })
+  );
+  const userId: string | undefined = conn.Item?.userId;
+  if (!userId) return null;
+  const user = await doc.send(
+    new GetCommand({ TableName: USERS, Key: { pk: `USER#${userId}` } })
+  );
+  const handle: string | undefined = user.Item?.handle;
+  if (!handle) return null;
+  return { connectionId, userId, handle };
+}
 
 const QUEUE_KEY = { pk: "queue" };
 const MAX_ATTEMPTS = 5;
@@ -24,6 +42,13 @@ export const findMatch = async (
   event: APIGatewayProxyWebsocketEventV2
 ): Promise<APIGatewayProxyResultV2> => {
   const { connectionId: me, domainName, stage } = event.requestContext;
+
+  // Gate: only a socket bound to a user who has claimed a handle can matchmake.
+  // The SPA enforces this too; this closes the raw-ws bypass.
+  if (!(await identity(me))) {
+    await push(domainName, stage, me, { type: "needHandle" });
+    return { statusCode: 200 };
+  }
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const queue = await doc.send(
@@ -113,13 +138,22 @@ async function startGame(
 ): Promise<void> {
   const gameId = randomUUID();
 
+  // Snapshot each player's identity onto the game row so match-end can write
+  // durable results (and opponent handles) without further lookups. Falls back
+  // to connectionId-only if identity is somehow missing (shouldn't after gate).
+  const [idA, idB] = await Promise.all([identity(connA), identity(connB)]);
+  const players = [
+    idA ?? { connectionId: connA },
+    idB ?? { connectionId: connB },
+  ];
+
   await doc.send(
     new PutCommand({
       TableName: GAMES,
       Item: {
         gameId,
         status: "active",
-        players: [{ connectionId: connA }, { connectionId: connB }],
+        players,
         scores: [0, 0],
         round: 1,
         category: null,

@@ -15,6 +15,8 @@ interface RealtimeStackProps extends cdk.StackProps {
   matchmakingTable: dynamodb.ITable;
   categoriesTable: dynamodb.ITable;
   categoryStatsTable: dynamodb.ITable;
+  usersTable: dynamodb.ITable;
+  matchResultsTable: dynamodb.ITable;
   userPool: cognito.IUserPool;
   userPoolClient: cognito.IUserPoolClient;
 }
@@ -29,6 +31,8 @@ export class RealtimeStack extends cdk.Stack {
       MATCHMAKING_TABLE: props.matchmakingTable.tableName,
       CATEGORIES_TABLE: props.categoriesTable.tableName,
       CATEGORY_STATS_TABLE: props.categoryStatsTable.tableName,
+      USERS_TABLE: props.usersTable.tableName,
+      MATCH_RESULTS_TABLE: props.matchResultsTable.tableName,
     };
     const fn = (name: string, entryFile: string, handler: string) =>
       new NodejsFunction(this, name, {
@@ -70,12 +74,17 @@ export class RealtimeStack extends cdk.Stack {
     props.connectionsTable.grantReadWriteData(disconnectFn);
     props.matchmakingTable.grantWriteData(disconnectFn);
     props.gamesTable.grantReadWriteData(disconnectFn);
+    // abandonGame records the match outcome (opponent wins).
+    props.matchResultsTable.grantWriteData(disconnectFn);
+    props.usersTable.grantWriteData(disconnectFn);
 
     // findMatch claims the queue, creates the game, links sockets, starts round 1.
     props.matchmakingTable.grantReadWriteData(findMatchFn);
     props.gamesTable.grantWriteData(findMatchFn);
-    props.connectionsTable.grantWriteData(findMatchFn);
+    // Reads connection rows for userId, users rows for handle (H4 gate + snapshot).
+    props.connectionsTable.grantReadWriteData(findMatchFn);
     props.categoriesTable.grantReadData(findMatchFn);
+    props.usersTable.grantReadData(findMatchFn);
 
     // submitPick validates + records a pick, resolves the round when both are in.
     props.connectionsTable.grantReadData(submitPickFn);
@@ -83,11 +92,16 @@ export class RealtimeStack extends cdk.Stack {
     props.categoriesTable.grantReadData(submitPickFn);
     // Reads live pick counts to blend the effective score, ADD-increments them.
     props.categoryStatsTable.grantReadWriteData(submitPickFn);
+    // A match-ending round writes the result + updates W/L counters.
+    props.matchResultsTable.grantWriteData(submitPickFn);
+    props.usersTable.grantWriteData(submitPickFn);
 
     // roundTimeout resolves a round after the deadline (no-show / both no-show).
     props.connectionsTable.grantReadData(roundTimeoutFn);
     props.gamesTable.grantReadWriteData(roundTimeoutFn);
     props.categoriesTable.grantReadData(roundTimeoutFn);
+    props.matchResultsTable.grantWriteData(roundTimeoutFn);
+    props.usersTable.grantWriteData(roundTimeoutFn);
 
     const wsApi = new WebSocketApi(this, "WsApi", {
       apiName: "ball-knowledge-ws",

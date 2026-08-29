@@ -6,8 +6,18 @@ import {
   GetCommand,
   UpdateCommand,
   ScanCommand,
+  PutCommand,
 } from "@aws-sdk/lib-dynamodb";
-import { doc, GAMES, CONNECTIONS, CATEGORIES, CATEGORY_STATS, push } from "./shared";
+import {
+  doc,
+  GAMES,
+  CONNECTIONS,
+  CATEGORIES,
+  CATEGORY_STATS,
+  USERS,
+  MATCH_RESULTS,
+  push,
+} from "./shared";
 
 const ROUND_MS = 30_000;
 const WIN_SCORE = 4;
@@ -253,6 +263,55 @@ export const roundTimeout = async (
   return { statusCode: 200 };
 };
 
+type PlayerRow = { connectionId: string; userId?: string; handle?: string };
+
+// Write the durable per-user outcome + update W/L counters. Callers invoke this
+// exactly once per game (guarded upstream by the single-resolver / abandon
+// status conditionals), so no dedupe is needed here. Best-effort per player:
+// an identity-less row (pre-auth game) is skipped rather than blocking others.
+async function recordMatchResult(
+  players: PlayerRow[],
+  gameId: string,
+  winnerIndex: number,
+  scores: number[]
+): Promise<void> {
+  const endedAt = Date.now();
+  await Promise.all(
+    players.map(async (p, i) => {
+      if (!p.userId) return;
+      const opp = players[1 - i];
+      const won = i === winnerIndex;
+
+      await doc.send(
+        new PutCommand({
+          TableName: MATCH_RESULTS,
+          Item: {
+            userId: p.userId,
+            sk: `${endedAt}#${gameId}`,
+            gameId,
+            won,
+            oppUserId: opp?.userId ?? null,
+            oppHandle: opp?.handle ?? null,
+            myScore: scores[i],
+            oppScore: scores[1 - i],
+            endedAt,
+          },
+        })
+      );
+
+      await doc.send(
+        new UpdateCommand({
+          TableName: USERS,
+          Key: { pk: `USER#${p.userId}` },
+          UpdateExpression:
+            "ADD played :one, " + (won ? "wins :one" : "losses :one"),
+          ExpressionAttributeValues: { ":one": 1 },
+        })
+      );
+    })
+  );
+}
+
 async function resolveRound(
   domainName: string,
   stage: string,
@@ -354,6 +413,7 @@ async function resolveRound(
   });
 
   if (over) {
+    await recordMatchResult(players as PlayerRow[], gameId, winnerIndex as number, scores);
     await pushBoth(domainName, stage, players, { type: "matchOver", scores, winnerIndex });
   } else {
     await pushBoth(domainName, stage, players, {
@@ -396,11 +456,14 @@ export async function abandonGame(
     throw e;
   }
 
+  const scores = [Number(game.scores[0]), Number(game.scores[1])];
+
   if (winnerIndex >= 0) {
+    await recordMatchResult(players as PlayerRow[], gameId, winnerIndex, scores);
     await push(domainName, stage, players[winnerIndex].connectionId, {
       type: "opponentLeft",
       winnerIndex,
-      scores: [Number(game.scores[0]), Number(game.scores[1])],
+      scores,
     }).catch(() => undefined);
   }
 }

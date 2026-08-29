@@ -12,6 +12,8 @@ export const GAMES = process.env.GAMES_TABLE!;
 export const MATCHMAKING = process.env.MATCHMAKING_TABLE!;
 export const CATEGORIES = process.env.CATEGORIES_TABLE!;
 export const CATEGORY_STATS = process.env.CATEGORY_STATS_TABLE!;
+export const USERS = process.env.USERS_TABLE!;
+export const MATCH_RESULTS = process.env.MATCH_RESULTS_TABLE!;
 
 // One management client per endpoint, reused across pushes within a warm
 // invocation (a resolver pushes 4x — no need to rebuild the client each time).

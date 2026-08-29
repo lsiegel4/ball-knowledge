@@ -44,6 +44,8 @@ new RealtimeStack(app, "BallKnowledge-Realtime", {
   matchmakingTable: data.matchmakingTable,
   categoriesTable: data.categoriesTable,
   categoryStatsTable: data.categoryStatsTable,
+  usersTable: data.usersTable,
+  matchResultsTable: data.matchResultsTable,
   userPool: auth.userPool,
   userPoolClient: auth.userPoolClient,
 });
