@@ -5,12 +5,21 @@ import {
   signIn,
   signOut,
   getCurrentUser,
+  fetchAuthSession,
 } from "aws-amplify/auth";
 import { DailyChallenge } from "./DailyChallenge";
 import { HeadToHead } from "./HeadToHead";
+import { ChooseHandle } from "./ChooseHandle";
+
+const API_URL = import.meta.env.VITE_API_URL;
 
 type Stage = "signIn" | "signUp" | "confirm" | "authed";
 type Mode = "daily" | "h2h";
+
+async function authHeaders() {
+  const session = await fetchAuthSession();
+  return { Authorization: `Bearer ${session.tokens?.idToken?.toString()}` };
+}
 
 export function App() {
   const [stage, setStage] = useState<Stage>("signIn");
@@ -19,12 +28,24 @@ export function App() {
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [status, setStatus] = useState("");
+  // undefined = not yet loaded, null = no handle claimed, string = the handle.
+  const [handle, setHandle] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     getCurrentUser()
       .then(() => setStage("authed"))
       .catch(() => setStage("signIn"));
   }, []);
+
+  // Once authed, load the profile so we know whether to gate on handle setup.
+  useEffect(() => {
+    if (stage !== "authed") return;
+    (async () => {
+      const res = await fetch(`${API_URL}/me/profile`, { headers: await authHeaders() });
+      const p = await res.json();
+      setHandle(p.handle);
+    })();
+  }, [stage]);
 
   const wrap = (fn: () => Promise<void>) => async (e: FormEvent) => {
     e.preventDefault();
@@ -60,6 +81,7 @@ export function App() {
   const doSignOut = wrap(async () => {
     await signOut();
     setStage("signIn");
+    setHandle(undefined);
   });
 
   return (
@@ -69,15 +91,24 @@ export function App() {
       {stage === "authed" ? (
         <>
           <button onClick={doSignOut} style={{ float: "right" }}>Sign out</button>
-          <div style={{ marginBottom: "1rem" }}>
-            <button onClick={() => setMode("daily")} disabled={mode === "daily"}>
-              Daily Challenge
-            </button>{" "}
-            <button onClick={() => setMode("h2h")} disabled={mode === "h2h"}>
-              Head-to-Head
-            </button>
-          </div>
-          {mode === "daily" ? <DailyChallenge /> : <HeadToHead />}
+          {handle === undefined ? (
+            <p>Loading…</p>
+          ) : handle === null ? (
+            <ChooseHandle onClaimed={setHandle} authHeaders={authHeaders} apiUrl={API_URL} />
+          ) : (
+            <>
+              <p style={{ color: "#666" }}>@{handle}</p>
+              <div style={{ marginBottom: "1rem" }}>
+                <button onClick={() => setMode("daily")} disabled={mode === "daily"}>
+                  Daily Challenge
+                </button>{" "}
+                <button onClick={() => setMode("h2h")} disabled={mode === "h2h"}>
+                  Head-to-Head
+                </button>
+              </div>
+              {mode === "daily" ? <DailyChallenge /> : <HeadToHead />}
+            </>
+          )}
         </>
       ) : (
         <>

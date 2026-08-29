@@ -34,6 +34,7 @@ new ApiStack(app, "BallKnowledge-Api", {
   playersTable: data.playersTable,
   dailyPicksTable: data.dailyPicksTable,
   dailyResultsTable: data.dailyResultsTable,
+  usersTable: data.usersTable,
 });
 
 new RealtimeStack(app, "BallKnowledge-Realtime", {

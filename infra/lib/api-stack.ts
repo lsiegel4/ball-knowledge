@@ -18,6 +18,7 @@ interface ApiStackProps extends cdk.StackProps {
   playersTable: dynamodb.ITable;
   dailyPicksTable: dynamodb.ITable;
   dailyResultsTable: dynamodb.ITable;
+  usersTable: dynamodb.ITable;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -117,6 +118,34 @@ export class ApiStack extends cdk.Stack {
     new events.Rule(this, "DailyTallySchedule", {
       schedule: events.Schedule.cron({ minute: "30", hour: "5" }),
       targets: [new targets.LambdaFunction(tallyFn)],
+    });
+
+    const meProfileFn = new NodejsFunction(this, "MeProfileFn", {
+      runtime: Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, "../../services/api/src/me-profile.ts"),
+      handler: "handler",
+      environment: { USERS_TABLE: props.usersTable.tableName },
+    });
+    props.usersTable.grantReadData(meProfileFn);
+
+    httpApi.addRoutes({
+      path: "/me/profile",
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration("MeProfileIntegration", meProfileFn),
+    });
+
+    const meHandleFn = new NodejsFunction(this, "MeHandleFn", {
+      runtime: Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, "../../services/api/src/me-handle.ts"),
+      handler: "handler",
+      environment: { USERS_TABLE: props.usersTable.tableName },
+    });
+    props.usersTable.grantReadWriteData(meHandleFn);
+
+    httpApi.addRoutes({
+      path: "/me/handle",
+      methods: [HttpMethod.POST],
+      integration: new HttpLambdaIntegration("MeHandleIntegration", meHandleFn),
     });
 
     new cdk.CfnOutput(this, "ApiUrl", { value: httpApi.apiEndpoint });

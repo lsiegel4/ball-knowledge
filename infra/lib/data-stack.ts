@@ -13,6 +13,7 @@ export class DataStack extends cdk.Stack {
   public readonly matchmakingTable: dynamodb.Table;
   public readonly categoriesTable: dynamodb.Table;
   public readonly categoryStatsTable: dynamodb.Table;
+  public readonly usersTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -100,6 +101,18 @@ export class DataStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    // User identity + H2H record. Single-table: a USER#<sub> item holds the
+    // handle + win/loss counters; a HANDLE#<lower> item reserves the name.
+    // Both written in one TransactWrite for atomic, unique handle claims.
+    // PITR on — this is durable user data, not regenerable.
+    this.usersTable = new dynamodb.Table(this, "UsersTable", {
+      tableName: "ball-knowledge-users",
+      partitionKey: { name: "pk", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     new cdk.CfnOutput(this, "RawBucketName", { value: this.rawBucket.bucketName });
     new cdk.CfnOutput(this, "PlayersTableName", { value: this.playersTable.tableName });
     new cdk.CfnOutput(this, "DailyPicksTableName", { value: this.dailyPicksTable.tableName });
@@ -109,5 +122,6 @@ export class DataStack extends cdk.Stack {
     new cdk.CfnOutput(this, "MatchmakingTableName", { value: this.matchmakingTable.tableName });
     new cdk.CfnOutput(this, "CategoriesTableName", { value: this.categoriesTable.tableName });
     new cdk.CfnOutput(this, "CategoryStatsTableName", { value: this.categoryStatsTable.tableName });
+    new cdk.CfnOutput(this, "UsersTableName", { value: this.usersTable.tableName });
   }
 }
