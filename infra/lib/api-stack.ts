@@ -19,6 +19,7 @@ interface ApiStackProps extends cdk.StackProps {
   dailyPicksTable: dynamodb.ITable;
   dailyResultsTable: dynamodb.ITable;
   usersTable: dynamodb.ITable;
+  matchResultsTable: dynamodb.ITable;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -124,9 +125,13 @@ export class ApiStack extends cdk.Stack {
       runtime: Runtime.NODEJS_20_X,
       entry: path.join(__dirname, "../../services/api/src/me-profile.ts"),
       handler: "handler",
-      environment: { USERS_TABLE: props.usersTable.tableName },
+      environment: {
+        USERS_TABLE: props.usersTable.tableName,
+        MATCH_RESULTS_TABLE: props.matchResultsTable.tableName,
+      },
     });
     props.usersTable.grantReadData(meProfileFn);
+    props.matchResultsTable.grantReadData(meProfileFn);
 
     httpApi.addRoutes({
       path: "/me/profile",

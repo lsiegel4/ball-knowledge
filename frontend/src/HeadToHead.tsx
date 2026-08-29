@@ -124,6 +124,10 @@ export function HeadToHead() {
         setNote("Opponent left.");
         setPhase("over");
         break;
+      case "needHandle":
+        setNote("Set a handle before playing.");
+        setPhase("idle");
+        break;
     }
   }, []);
 

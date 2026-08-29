@@ -10,11 +10,12 @@ import {
 import { DailyChallenge } from "./DailyChallenge";
 import { HeadToHead } from "./HeadToHead";
 import { ChooseHandle } from "./ChooseHandle";
+import { Profile } from "./Profile";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
 type Stage = "signIn" | "signUp" | "confirm" | "authed";
-type Mode = "daily" | "h2h";
+type Mode = "daily" | "h2h" | "profile";
 
 async function authHeaders() {
   const session = await fetchAuthSession();
@@ -104,9 +105,14 @@ export function App() {
                 </button>{" "}
                 <button onClick={() => setMode("h2h")} disabled={mode === "h2h"}>
                   Head-to-Head
+                </button>{" "}
+                <button onClick={() => setMode("profile")} disabled={mode === "profile"}>
+                  Profile
                 </button>
               </div>
-              {mode === "daily" ? <DailyChallenge /> : <HeadToHead />}
+              {mode === "daily" && <DailyChallenge />}
+              {mode === "h2h" && <HeadToHead />}
+              {mode === "profile" && <Profile authHeaders={authHeaders} apiUrl={API_URL} />}
             </>
           )}
         </>
